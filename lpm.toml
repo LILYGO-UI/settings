@@ -1,0 +1,49 @@
+schema_version = 1
+
+[project]
+package = "lilygo-ui-settings"
+version = "0.1.0"
+app_id = "cc.lilygo.ui.Settings"
+title = "Settings"
+summary = "Configure networking, Bluetooth, power, and device settings."
+description = "The system Settings application for LILYGO UI devices, providing Wi-Fi, Bluetooth, Ethernet, battery, and device information controls."
+license = "LicenseRef-proprietary"
+source_repo = "https://github.com/LILYGO-UI/settings"
+homepage = "https://github.com/LILYGO-UI/settings"
+categories = ["System", "Utilities"]
+
+[[project.authors]]
+name = "LILYGO"
+github = "LILYGO"
+
+[project.assets]
+icon = "assets/app-icon.png"
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-home.png"
+caption = "Settings categories and current device status."
+
+[[project.permissions]]
+id = "network"
+reason = "Inspect and configure Wi-Fi and Ethernet through system network services."
+
+[[project.permissions]]
+id = "bluetooth"
+reason = "Inspect, enable, pair, and disconnect Bluetooth devices through BlueZ."
+
+[project.compatibility]
+architectures = ["arm64"]
+min_appkit_version = "1.2.0"
+
+[project.launcher]
+order = 35
+
+[build]
+host_preset = "host-simulator"
+cross_preset = "cm0-cross"
+package_dir = "dist"
+
+[deploy]
+host = "raspberrypi.local"
+user = "pi"
+port = 22

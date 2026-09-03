@@ -1,0 +1,7 @@
+/.cache/
+/.lpm/
+/.venv/
+/build/
+/dist/
+/.DS_Store
+/.vscode/
