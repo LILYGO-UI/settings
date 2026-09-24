@@ -6,7 +6,7 @@ Settings layout: Wi-Fi, Bluetooth, Ethernet, and Battery share one group;
 General is a separate group and contains the About page.
 
 The project builds independently from the launcher. It consumes LILYGO UI
-AppKit as a CMake package and does not vendor launcher or AppKit sources.
+AppKit through its source SDK CMake package and does not use launcher sources.
 
 ## UI architecture
 
@@ -40,13 +40,35 @@ reserve or render a second status bar or home indicator.
 - Git submodules initialized
 - An AArch64 cross compiler for device builds
 
-AppKit is pinned as the `third_party/cm0-appkit` Git submodule. Clone with
-submodules, or initialize them in an existing checkout:
+AppKit is pinned as the `third_party/cm0-appkit` Git submodule. Initialize it
+before configuring the application:
 
 ```sh
-git clone --recurse-submodules <settings-repository-url>
 git submodule update --init --recursive
 ```
+
+The presets select this source SDK with `LilyGoUI_DIR`. Its package config
+builds AppKit and LVGL as static libraries and links them into each application.
+Updating AppKit code requires updating the submodule revision and rebuilding
+the application. A local SDK checkout can be selected explicitly:
+
+```sh
+cmake --preset host-simulator -DLilyGoUI_DIR=/path/to/appkit
+```
+
+Host builds use the SDK's font assets. Devices install `lilygo-ui-appkit-dev`,
+version 0.1.0 or newer, which contains the source SDK and the shared Inter,
+Source Han Sans CN, Font Awesome, and font licenses. Applications do not bundle
+duplicate fonts. AppKit and LVGL remain statically linked into each application;
+the package supplies no AppKit or LVGL shared libraries. The
+`min_appkit_version` field in `lpm.toml` sets this package's minimum version.
+The package also supports build environments using an installed source SDK
+instead of the submodule.
+
+Cross builds require the BSP sysroot and its system development libraries;
+they do not require an AppKit SDK package in the sysroot.
+When returning from a binary SDK build, use a fresh build directory so no old
+imported targets or SDK search paths remain cached.
 
 ## Project metadata
 
@@ -81,7 +103,6 @@ On macOS, install host dependencies with `brew install cmake pkg-config sdl2`.
 Then configure, build, test, and launch the SDL simulator:
 
 ```sh
-git submodule update --init --recursive
 cmake --preset host-simulator
 cmake --build --preset host-simulator --parallel
 ctest --preset host-simulator
@@ -98,14 +119,13 @@ write PPM snapshots under `build/host-simulator/`.
 
 ## CM0 build and Debian package
 
-Initialize the AppKit submodule, then use the cross preset. On its first
-configuration, CMake downloads the pinned
+Initialize the AppKit submodule, then use the cross preset.
+On its first configuration, CMake downloads the pinned
 [`0.1.0` CM0 BSP](https://github.com/LILYGO-UI/CM0BspBuilder/releases/download/0.1.0/cm0_sdk.tar.gz),
 verifies its SHA-256 checksum, and extracts it under
 `.cache/cm0-bsp/0.1.0`. Later builds reuse that cache.
 
 ```sh
-git submodule update --init --recursive
 cmake --preset cm0-cross
 cmake --build --preset cm0-cross --parallel
 cpack --config build/cm0-cross/CPackConfig.cmake -B dist
@@ -125,11 +145,40 @@ migration fields are not a naming convention for new applications.
 
 Device builds use AppKit's direct DRM/KMS display backend and evdev input.
 They do not require a desktop session, Wayland, or a compositor. The generated
-Debian package depends on `libdrm2` but has no Wayland or xkbcommon runtime
-dependencies.
+Debian package directly depends on DRM/FreeType system libraries and the
+`lilygo-ui-appkit-dev` SDK and font package. The direct DRM backend needs no
+Wayland or xkbcommon runtime libraries.
 
 The published BSP sysroot contains the `libdrm-dev` headers and pkg-config
 metadata required by the device build.
+
+## GPU renderer builds
+
+Device rendering is selected at application build time by the source AppKit
+SDK. Use an updated SDK supporting `LILYGO_UI_RENDERER` and a target-matched
+CM0 sysroot with `libgbm-dev`, `libegl-dev`, and `libgles-dev`. The original
+BSP 0.1.0 lacks those GPU development dependencies. The original pinned
+AppKit submodule does not support GPU renderer selection; use a newer source
+SDK explicitly for this build.
+
+Select the SDK source checkout or the directory containing the installed
+source SDK's `LilyGoUIConfig.cmake`:
+
+```sh
+cmake --preset cm0-cross -B build/cm0-opengles \
+  -DLilyGoUI_DIR=/path/to/appkit \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/cm0-sysroot/usr/share/cm0-bsp/toolchain.cmake \
+  -DLILYGO_UI_RENDERER=opengles
+cmake --build build/cm0-opengles --parallel
+cpack --config build/cm0-opengles/CPackConfig.cmake -B dist/opengles
+```
+
+The executable contains AppKit and LVGL code, and its Debian package declares
+the selected renderer's system graphics dependencies. Keep separate build
+directories for software, OpenGL ES, and experimental NanoVG. Use software
+rendering for host simulator tests. Compare rendering correctness, frame time,
+memory, and repeated application exit/return on the target before changing a
+release renderer.
 
 ## Platform integration
 

@@ -33,7 +33,7 @@ reason = "Inspect, enable, pair, and disconnect Bluetooth devices through BlueZ.
 
 [project.compatibility]
 architectures = ["arm64"]
-min_appkit_version = "1.2.0"
+min_appkit_version = "0.1.0"
 
 [project.launcher]
 order = 35

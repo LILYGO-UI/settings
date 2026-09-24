@@ -161,6 +161,10 @@ set(CPACK_DEBIAN_APP_PACKAGE_NAME "${LILYGO_UI_PACKAGE_NAME}")
 set(CPACK_DEBIAN_APP_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_APP_PACKAGE_DEPENDS
     "libc6, libstdc++6, libdrm2, libfreetype6, lilygo-ui-appkit-dev (>= ${LILYGO_UI_MIN_APPKIT_VERSION})")
+if(LILYGO_UI_GRAPHICS_DEBIAN_DEPENDS)
+    string(APPEND CPACK_DEBIAN_APP_PACKAGE_DEPENDS
+        ", ${LILYGO_UI_GRAPHICS_DEBIAN_DEPENDS}")
+endif()
 set(CPACK_DEBIAN_APP_PACKAGE_SECTION "utils")
 
 # lilygo-ui-settings supersedes the published lilygo-cm0-settings package.
