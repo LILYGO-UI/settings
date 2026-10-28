@@ -12,6 +12,7 @@ struct HomePresentation {
     std::string wifi;
     std::string bluetooth;
     std::string ethernet;
+    std::string cellular = "Checking...";
     std::string battery;
 };
 
@@ -19,6 +20,7 @@ class HomeViewModel {
 public:
     explicit HomeViewModel(SettingsModel &model) noexcept;
     void publish();
+    void set_cellular_status(const std::string &status);
     [[nodiscard]] const HomePresentation &presentation() const noexcept;
     [[nodiscard]] lv_subject_t *revision_subject() noexcept;
 

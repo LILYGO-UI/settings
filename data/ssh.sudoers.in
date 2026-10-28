@@ -1,0 +1,5 @@
+# @LILYGO_UI_APP_ID@: Remote Login control for existing administrator users.
+# Match the complete argument list. No arbitrary units, commands, or arguments.
+%sudo ALL=(root) NOPASSWD: /usr/bin/systemctl --no-pager --no-ask-password enable --now ssh.service
+%sudo ALL=(root) NOPASSWD: /usr/bin/systemctl --no-pager --no-ask-password disable --now ssh.service
+%sudo ALL=(root) NOPASSWD: /usr/bin/systemctl --no-pager --no-ask-password disable --now ssh.socket ssh.service

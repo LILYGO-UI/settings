@@ -13,9 +13,12 @@ enum class SettingsPage : std::size_t {
     wifi,
     bluetooth,
     ethernet,
+    cellular,
     battery,
+    keyboard,
     general,
     about,
+    sharing,
     count,
 };
 

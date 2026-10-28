@@ -32,6 +32,9 @@ inline constexpr SemanticColor disclosure{0xc7c7cc, opaque};
 inline constexpr SemanticColor accent_content{0xffffff, opaque};
 inline constexpr SemanticColor back_icon{0x111111, opaque};
 
+// Landscape navigation uses the same accent as the primary platform action.
+inline constexpr SemanticColor navigation_selected{0x007aff, opaque};
+
 // Battery level indicator thresholds.
 inline constexpr SemanticColor battery_critical{0xd94841, opaque};
 inline constexpr SemanticColor battery_low{0xf59e0b, opaque};

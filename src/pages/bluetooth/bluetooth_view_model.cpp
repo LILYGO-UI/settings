@@ -64,6 +64,7 @@ bool BluetoothViewModel::resume_pending_scan()
 void BluetoothViewModel::cancel_pending_scan() noexcept
 {
     scan_pending_ = false;
+    clear_pending_device_info();
 }
 
 void BluetoothViewModel::refresh()
@@ -160,10 +161,28 @@ void BluetoothViewModel::command_finished(const SettingsCommandResult &result)
             else if (!has_output(result.output)) {
                 model_.clear_bluetooth_devices();
                 status_override_ = "No Devices Found";
-            } else if (model_.update_bluetooth_devices(result.output))
-                status_override_ = "Devices Updated";
-            else
+            } else if (!model_.update_bluetooth_devices(result.output)) {
                 status_override_ = "Bluetooth Search Failed";
+            } else {
+                pending_info_addresses_.clear();
+                pending_info_index_ = 0;
+                for (const auto &device : model_.bluetooth_devices()) {
+                    if (device.name.empty()) pending_info_addresses_.push_back(device.address);
+                }
+                if (!pending_info_addresses_.empty() && start_next_device_info()) return;
+                status_override_ = "Devices Updated";
+            }
+            publish();
+            break;
+        case SettingsCommand::bluetooth_info:
+            if (pending_info_index_ < pending_info_addresses_.size()) {
+                const auto address = pending_info_addresses_[pending_info_index_];
+                (void)model_.update_bluetooth_device_name(address, result.output);
+                ++pending_info_index_;
+            }
+            if (start_next_device_info()) return;
+            clear_pending_device_info();
+            status_override_ = "Devices Updated";
             publish();
             break;
         case SettingsCommand::bluetooth_sync: {
@@ -219,15 +238,19 @@ lv_subject_t *BluetoothViewModel::revision_subject() noexcept
     return revision_.get();
 }
 
-bool BluetoothViewModel::start(SettingsCommand command, std::vector<std::string> arguments, const char *progress)
+bool BluetoothViewModel::start(SettingsCommand command, std::vector<std::string> arguments, const char *progress,
+                               std::chrono::milliseconds timeout)
 {
-    if (commands_.busy() && settings_command_is_background(commands_.active_command())) commands_.stop();
+    if (commands_.busy() && settings_command_is_background(commands_.active_command())) {
+        if (commands_.active_command() == SettingsCommand::bluetooth_info) clear_pending_device_info();
+        commands_.stop();
+    }
     if (commands_.busy()) {
         status_override_ = "Another Operation Is In Progress";
         publish();
         return false;
     }
-    if (!commands_.start(command, arguments)) {
+    if (!commands_.start(command, arguments, {}, timeout)) {
         status_override_ = "Cannot Start Operation";
         publish();
         return false;
@@ -235,6 +258,20 @@ bool BluetoothViewModel::start(SettingsCommand command, std::vector<std::string>
     status_override_ = progress;
     publish();
     return true;
+}
+
+bool BluetoothViewModel::start_next_device_info()
+{
+    if (pending_info_index_ >= pending_info_addresses_.size()) return false;
+    return start(SettingsCommand::bluetooth_info,
+                 {model_.environment().bluetoothctl, "info", pending_info_addresses_[pending_info_index_]},
+                 "Loading Device Names...", background_command_timeout);
+}
+
+void BluetoothViewModel::clear_pending_device_info() noexcept
+{
+    pending_info_addresses_.clear();
+    pending_info_index_ = 0;
 }
 
 void BluetoothViewModel::update_list_generation() noexcept

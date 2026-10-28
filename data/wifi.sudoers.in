@@ -1,0 +1,8 @@
+# @LILYGO_UI_APP_ID@: Wi-Fi control for existing administrator users.
+# Read operations remain unprivileged. Passwords are supplied to nmcli on stdin.
+# Only joining Wi-Fi networks and UUID-selected profiles are
+# authorized; this does not grant arbitrary NetworkManager configuration.
+%sudo ALL=(root) NOPASSWD: /usr/bin/nmcli --wait 15 device wifi connect *
+%sudo ALL=(root) NOPASSWD: /usr/bin/nmcli --ask --wait 15 device wifi connect *
+%sudo ALL=(root) NOPASSWD: /usr/bin/nmcli ^connection up uuid [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+%sudo ALL=(root) NOPASSWD: /usr/bin/nmcli ^connection delete uuid [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$

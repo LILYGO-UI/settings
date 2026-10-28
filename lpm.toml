@@ -5,8 +5,8 @@ package = "lilygo-ui-settings"
 version = "0.1.0"
 app_id = "cc.lilygo.ui.Settings"
 title = "Settings"
-summary = "Configure networking, Bluetooth, power, and device settings."
-description = "The system Settings application for LILYGO UI devices, providing Wi-Fi, Bluetooth, Ethernet, battery, and device information controls."
+summary = "Configure networking, SSH sharing, serial console, keyboard vibration, power, and device settings."
+description = "The system Settings application for LILYGO UI devices, providing Wi-Fi, Bluetooth, Ethernet, cellular radio and SIM information with available modem data statistics, battery capacity calibration and charging limits, keyboard vibration, SSH remote login, serial console, and device information controls."
 license = "LicenseRef-proprietary"
 source_repo = "https://github.com/LILYGO-UI/settings"
 homepage = "https://github.com/LILYGO-UI/settings"
@@ -23,13 +23,69 @@ icon = "assets/app-icon.png"
 path = "assets/previews/settings-home.png"
 caption = "Settings categories and current device status."
 
+[[project.assets.screenshots]]
+path = "assets/previews/settings-landscape-wifi.png"
+caption = "Wi-Fi with the current connection, known networks, and nearby networks."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-wifi-tcpip.png"
+caption = "Current Wi-Fi connection details with IPv4 and IPv6 information."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-wifi-dns.png"
+caption = "Wi-Fi DNS servers and search domains."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-wifi-hardware.png"
+caption = "Wi-Fi interface, MAC address, and MTU."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-cellular.png"
+caption = "Cellular radio, SIM information, registration status, and available modem data statistics."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-landscape-cellular.png"
+caption = "Cellular in the responsive landscape settings view."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-sharing.png"
+caption = "General > Sharing with SSH remote login and serial console controls."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-landscape-sharing.png"
+caption = "Sharing in the responsive landscape settings view."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-serial-restart.png"
+caption = "Restart now or later after saving Serial Console settings."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-battery.png"
+caption = "Battery telemetry and capacity calibration."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-battery-calibration.png"
+caption = "Confirm design and full-charge capacities before saving."
+
+[[project.assets.screenshots]]
+path = "assets/previews/settings-battery-charging.png"
+caption = "BQ25890 input and charge current controls."
+
 [[project.permissions]]
 id = "network"
-reason = "Inspect and configure Wi-Fi and Ethernet through system network services."
+reason = "Inspect networking; allow existing administrator users to join or forget Wi-Fi networks and toggle SSH through narrowly authorized system commands."
 
 [[project.permissions]]
 id = "bluetooth"
 reason = "Inspect, enable, pair, and disconnect Bluetooth devices through BlueZ."
+
+[[project.permissions]]
+id = "serial"
+reason = "Access the nRF9151 cellular module through /dev/ttyACM0 to control LTE and read SIM, registration, signal, and available modem data statistics using the user's operating-system serial permissions; allow existing administrator users to save serial console settings and restart after confirmation through narrowly authorized commands."
+
+[[project.permissions]]
+id = "i2c"
+reason = "Read fuel gauge telemetry and allow administrator users to calibrate BQ27220 capacities and set BQ25890 current limits through a restricted helper."
 
 [project.compatibility]
 architectures = ["arm64"]

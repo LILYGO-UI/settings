@@ -58,7 +58,8 @@ struct ValueRow {
 
 // Direct children are stable: status, title, subtitle, lock, trailing, divider.
 [[nodiscard]] lv_obj_t *create_dynamic_row(lv_obj_t *parent, const char *title, const char *subtitle,
-                                           const char *trailing, bool connected, bool locked);
+                                           const char *trailing, bool connected, bool locked,
+                                           bool interactive = true);
 
 }  // namespace lilygo::settings::components
 

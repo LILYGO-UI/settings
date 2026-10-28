@@ -323,28 +323,103 @@ int settings_bluetooth_parse_devices(const char *output, settings_bluetooth_devi
         memcpy(line, cursor, length);
         line[length] = '\0';
         trim(line);
-        char *device = NULL;
-        if (strncmp(line, "Device ", 7) == 0)
-            device = line + 7;
-        else if (strncmp(line, "[NEW] Device ", 13) == 0)
-            device = line + 13;
-        if (device) {
-            char *space = strchr(device, ' ');
-            if (space && space - device == 17) {
-                *space           = '\0';
-                const char *name = space + 1;
-                bool duplicate   = false;
-                for (size_t i = 0; i < devices->count; ++i) duplicate |= strcmp(devices->items[i].address, device) == 0;
-                if (is_bluetooth_address(device) && !duplicate && name[0]) {
-                    settings_bluetooth_device_t *item = &devices->items[devices->count++];
-                    snprintf(item->address, sizeof(item->address), "%s", device);
-                    snprintf(item->name, sizeof(item->name), "%s", name);
+        const char *device_start = NULL;
+        bool direct_device       = false;
+        bool name_change         = false;
+        if (strncmp(line, "Device ", 7) == 0) {
+            device_start   = line + 7;
+            direct_device  = true;
+        } else if (strncmp(line, "[NEW] Device ", 13) == 0) {
+            device_start   = line + 13;
+            direct_device  = true;
+        } else if (strncmp(line, "[CHG] Device ", 13) == 0) {
+            device_start = line + 13;
+        }
+        if (device_start && strlen(device_start) >= 17U &&
+            (device_start[17] == '\0' || device_start[17] == ' ' || device_start[17] == '\t')) {
+            char address[SETTINGS_NAME_MAX] = {};
+            memcpy(address, device_start, 17U);
+            address[17] = '\0';
+            if (is_bluetooth_address(address)) {
+                const char *details = device_start + 17U;
+                while (*details == ' ' || *details == '\t') ++details;
+                char details_copy[SETTINGS_VALUE_MAX];
+                snprintf(details_copy, sizeof(details_copy), "%s", details);
+                trim(details_copy);
+
+                const char *name = NULL;
+                if (direct_device) {
+                    name = details_copy;
+                } else if (strncmp(details_copy, "Name:", 5) == 0) {
+                    name_change = true;
+                    name        = details_copy + 5;
+                    while (*name == ' ' || *name == '\t') ++name;
+                } else if (strncmp(details_copy, "Alias:", 6) == 0) {
+                    name_change = true;
+                    name        = details_copy + 6;
+                    while (*name == ' ' || *name == '\t') ++name;
+                }
+
+                if (direct_device || (name_change && name && *name)) {
+                    size_t index = devices->count;
+                    for (size_t i = 0; i < devices->count; ++i) {
+                        if (strcmp(devices->items[i].address, address) == 0) {
+                            index = i;
+                            break;
+                        }
+                    }
+                    if (index == devices->count && devices->count < SETTINGS_BLUETOOTH_DEVICE_MAX) {
+                        index = devices->count++;
+                        snprintf(devices->items[index].address, sizeof(devices->items[index].address), "%s", address);
+                    }
+                    if (index < devices->count && name && *name)
+                        snprintf(devices->items[index].name, sizeof(devices->items[index].name), "%s", name);
                 }
             }
         }
         cursor = end ? end + 1 : cursor + strlen(cursor);
     }
     return devices->count ? SETTINGS_BACKEND_OK : SETTINGS_BACKEND_NOT_FOUND;
+}
+
+int settings_bluetooth_parse_info(const char *output, settings_bluetooth_device_t *device)
+{
+    if (!output || !device) return SETTINGS_BACKEND_ERROR;
+    memset(device, 0, sizeof(*device));
+    const char *cursor = output;
+    bool address_found = false;
+    bool name_found    = false;
+    while (*cursor) {
+        const char *end = strchr(cursor, '\n');
+        size_t length   = end ? (size_t)(end - cursor) : strlen(cursor);
+        char line[320];
+        if (length >= sizeof(line)) length = sizeof(line) - 1U;
+        memcpy(line, cursor, length);
+        line[length] = '\0';
+        trim(line);
+        if (strncmp(line, "Device ", 7) == 0) {
+            const char *address = line + 7;
+            if (strlen(address) >= 17U) {
+                char parsed[SETTINGS_NAME_MAX] = {};
+                memcpy(parsed, address, 17U);
+                parsed[17] = '\0';
+                if (is_bluetooth_address(parsed)) {
+                    snprintf(device->address, sizeof(device->address), "%s", parsed);
+                    address_found = true;
+                }
+            }
+        } else if (strncmp(line, "Name:", 5) == 0 || strncmp(line, "Alias:", 6) == 0) {
+            const char *name = line + (line[0] == 'N' ? 5 : 6);
+            while (*name == ' ' || *name == '\t') ++name;
+            if (*name) {
+                snprintf(device->name, sizeof(device->name), "%s", name);
+                name_found = true;
+            }
+        }
+        cursor = end ? end + 1 : cursor + strlen(cursor);
+    }
+    if (!address_found || !name_found) return SETTINGS_BACKEND_NOT_FOUND;
+    return SETTINGS_BACKEND_OK;
 }
 
 int settings_bluetooth_parse_show(const char *output, settings_bluetooth_controller_t *controller)

@@ -7,9 +7,12 @@
 #include "pages/battery/battery_view_model.hpp"
 #include "pages/bluetooth/bluetooth_view_model.hpp"
 #include "pages/ethernet/ethernet_view_model.hpp"
+#include "pages/cellular/cellular_view_model.hpp"
 #include "pages/general/general_view_model.hpp"
 #include "pages/home/home_view_model.hpp"
+#include "pages/keyboard/keyboard_view_model.hpp"
 #include "pages/wifi/wifi_view_model.hpp"
+#include "pages/sharing/sharing_view_model.hpp"
 
 namespace lilygo::settings {
 
@@ -30,9 +33,12 @@ public:
     [[nodiscard]] WifiViewModel &wifi() noexcept;
     [[nodiscard]] BluetoothViewModel &bluetooth() noexcept;
     [[nodiscard]] EthernetViewModel &ethernet() noexcept;
+    [[nodiscard]] CellularViewModel &cellular() noexcept;
     [[nodiscard]] BatteryViewModel &battery() noexcept;
+    [[nodiscard]] KeyboardViewModel &keyboard() noexcept;
     [[nodiscard]] GeneralViewModel &general() noexcept;
     [[nodiscard]] AboutViewModel &about() noexcept;
+    [[nodiscard]] SharingViewModel &sharing() noexcept;
 
 private:
     void publish_passive_pages();
@@ -45,13 +51,17 @@ private:
     WifiViewModel wifi_;
     BluetoothViewModel bluetooth_;
     EthernetViewModel ethernet_;
+    CellularViewModel cellular_;
     BatteryViewModel battery_;
+    KeyboardViewModel keyboard_;
     GeneralViewModel general_;
     AboutViewModel about_;
+    SharingViewModel sharing_;
     bool refresh_pending_           = false;
     bool wifi_radio_sync_pending_   = false;
     bool wifi_sync_pending_         = false;
     bool bluetooth_sync_pending_    = false;
+    bool ethernet_sync_pending_     = false;
     bool published_foreground_busy_ = false;
 };
 

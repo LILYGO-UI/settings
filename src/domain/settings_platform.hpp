@@ -109,6 +109,7 @@ int settings_radio_set_enabled(const char *rfkill_root, const char *type, bool e
 int settings_interfaces_read(const char *network_root, bool wireless, settings_interface_list_t *interfaces);
 int settings_wifi_parse_nmcli(const char *output, settings_wifi_network_list_t *networks);
 int settings_bluetooth_parse_devices(const char *output, settings_bluetooth_device_list_t *devices);
+int settings_bluetooth_parse_info(const char *output, settings_bluetooth_device_t *device);
 int settings_bluetooth_parse_show(const char *output, settings_bluetooth_controller_t *controller);
 int settings_battery_read(const char *power_supply_root, settings_battery_t *battery);
 int settings_about_read(const char *os_release_path, const char *model_path, const char *serial_path,

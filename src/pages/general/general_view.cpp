@@ -29,8 +29,10 @@ lv_obj_t *GeneralView::create(lv_obj_t *parent)
     lv_obj_set_width(group, LV_PCT(100));
     lv_obj_set_style_max_width(group, 680, 0);
     const auto about =
-        components::create_menu_row(group, LV_SYMBOL_SETTINGS, "About", "", false, true, "settings_general_about_row");
+        components::create_menu_row(group, LV_SYMBOL_SETTINGS, "About", "", true, true, "settings_general_about_row");
     about_detail_ = about.detail;
+    (void)components::create_menu_row(group, LV_SYMBOL_UPLOAD, "Sharing", "", false, true,
+                                       "settings_general_sharing_row");
 
     lv_subject_add_observer_obj(view_model_.revision_subject(), presentation_changed, root_, this);
     render();

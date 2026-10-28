@@ -1,0 +1,5 @@
+# @LILYGO_UI_APP_ID@: validated BQ27220 capacity and BQ25890 current controls.
+# The helper fixes the sysfs root and accepts no paths or arbitrary attributes.
+%sudo ALL=(root) NOPASSWD: @LILYGO_UI_BATTERY_HELPER_PATH@ ^input-current [0-9]{1,10} [0-9]+:[0-9]+$
+%sudo ALL=(root) NOPASSWD: @LILYGO_UI_BATTERY_HELPER_PATH@ ^charge-current [0-9]{1,10} [0-9]+:[0-9]+$
+%sudo ALL=(root) NOPASSWD: @LILYGO_UI_BATTERY_HELPER_PATH@ ^capacity [0-9]{1,5} [0-9]{1,5} [0-9]+:[0-9]+$

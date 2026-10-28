@@ -1,0 +1,5 @@
+# @LILYGO_UI_APP_ID@: Serial Console control for existing administrator users.
+# Match complete argument lists; do not grant arbitrary raspi-config or systemctl access.
+%sudo ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_serial_cons 0
+%sudo ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_serial_cons 1
+%sudo ALL=(root) NOPASSWD: /usr/bin/systemctl --no-ask-password reboot

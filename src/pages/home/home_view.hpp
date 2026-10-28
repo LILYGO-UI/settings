@@ -11,6 +11,7 @@ class HomeView {
 public:
     explicit HomeView(HomeViewModel &view_model) noexcept;
     [[nodiscard]] lv_obj_t *create(lv_obj_t *parent);
+    void set_landscape(bool landscape) noexcept;
     void destroy() noexcept;
 
 private:
@@ -22,7 +23,15 @@ private:
     lv_obj_t *wifi_      = nullptr;
     lv_obj_t *bluetooth_ = nullptr;
     lv_obj_t *ethernet_  = nullptr;
+    lv_obj_t *cellular_  = nullptr;
     lv_obj_t *battery_   = nullptr;
+    lv_obj_t *connectivity_ = nullptr;
+    lv_obj_t *general_group_ = nullptr;
+    lv_obj_t *footer_ = nullptr;
+    lv_obj_t *keyboard_group_ = nullptr;
+    lv_obj_t *landscape_welcome_ = nullptr;
+    lv_obj_t *landscape_status_ = nullptr;
+    bool landscape_ = false;
 };
 
 }  // namespace lilygo::settings

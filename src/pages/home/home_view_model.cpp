@@ -44,6 +44,13 @@ void HomeViewModel::publish()
     revision_.publish();
 }
 
+void HomeViewModel::set_cellular_status(const std::string &status)
+{
+    if (presentation_.cellular == status) return;
+    presentation_.cellular = status;
+    revision_.publish();
+}
+
 const HomePresentation &HomeViewModel::presentation() const noexcept
 {
     return presentation_;

@@ -88,6 +88,7 @@ void style_row(lv_obj_t *row, std::int32_t height)
     set_background(row, theme::container_background);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
     set_background(row, theme::pressed_background, LV_PART_MAIN | LV_STATE_PRESSED);
+    set_background(row, theme::pressed_background, LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 }
 
@@ -192,11 +193,26 @@ DetailHeader create_detail_header(lv_obj_t *parent, const char *title, const cha
     lv_obj_set_style_pad_left(result.root, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_right(result.root, 8, LV_PART_MAIN);
 
-    result.back = create_label(result.root, LV_SYMBOL_LEFT, 28, theme::back_icon, back_name);
+    result.back = lv_button_create(result.root);
+    set_name(result.back, back_name);
+    lv_obj_remove_style_all(result.back);
+    // Use the compact circular affordance used by iOS navigation controls.
+    // Keep the hit target at 44px while giving the visual button a filled
+    // surface and a clear pressed state.
+    set_background(result.back, theme::container_background, LV_PART_MAIN);
+    set_background(result.back, theme::pressed_background, LV_PART_MAIN | LV_STATE_PRESSED);
+    set_background(result.back, theme::pressed_background, LV_PART_MAIN | LV_STATE_FOCUSED);
     lv_obj_set_size(result.back, 44, 44);
-    lv_obj_set_style_text_align(result.back, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_add_flag(result.back, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(result.back, 22, LV_PART_MAIN);
+    lv_obj_set_style_border_width(result.back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(result.back, 2);
+    lv_obj_t *back_icon = create_label(result.back, LV_SYMBOL_LEFT, 28, theme::back_icon);
+    // Center the glyph's own text box, then apply a tiny optical correction
+    // for the left bearing of the chevron glyph.
+    lv_obj_set_size(back_icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_left(back_icon, 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(back_icon, 0, LV_PART_MAIN);
+    lv_obj_center(back_icon);
     set_grid_cell(result.back, LV_GRID_ALIGN_CENTER, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
 
     result.title = create_label(result.root, title, 28, theme::container_title, "detail_header_title");
@@ -257,7 +273,7 @@ MenuRow create_menu_row(lv_obj_t *parent, const char *icon, const char *title, c
     static const std::int32_t columns[] = {40, LV_GRID_FR(5), LV_GRID_FR(2), 20, LV_GRID_TEMPLATE_LAST};
     static const std::int32_t rows[]    = {LV_GRID_FR(1), 1, LV_GRID_TEMPLATE_LAST};
 
-    result.root = lv_obj_create(parent);
+    result.root = lv_button_create(parent);
     set_name(result.root, name);
     style_row(result.root, 82);
     lv_obj_set_layout(result.root, LV_LAYOUT_GRID);
@@ -300,7 +316,7 @@ MenuRow create_image_menu_row(lv_obj_t *parent, const lv_image_dsc_t *icon, cons
     static const std::int32_t columns[] = {48, LV_GRID_FR(5), LV_GRID_FR(2), 20, LV_GRID_TEMPLATE_LAST};
     static const std::int32_t rows[]    = {LV_GRID_FR(1), 1, LV_GRID_TEMPLATE_LAST};
 
-    result.root = lv_obj_create(parent);
+    result.root = lv_button_create(parent);
     set_name(result.root, name);
     style_row(result.root, 82);
     lv_obj_set_layout(result.root, LV_LAYOUT_GRID);
@@ -368,16 +384,17 @@ ValueRow create_value_row(lv_obj_t *parent, const char *title, const char *value
 }
 
 lv_obj_t *create_dynamic_row(lv_obj_t *parent, const char *title, const char *subtitle, const char *trailing,
-                             bool connected, bool locked)
+                             bool connected, bool locked, bool interactive)
 {
     if (!parent) return nullptr;
 
     static const std::int32_t columns[] = {24, LV_GRID_FR(1), LV_GRID_CONTENT, 20, LV_GRID_TEMPLATE_LAST};
     static const std::int32_t rows[]    = {LV_GRID_FR(1), LV_GRID_FR(1), 1, LV_GRID_TEMPLATE_LAST};
 
-    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_t *row = interactive ? lv_button_create(parent) : lv_obj_create(parent);
     set_name(row, "dynamic_row");
     style_row(row, 82);
+    if (!interactive) lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_layout(row, LV_LAYOUT_GRID);
     lv_obj_set_grid_dsc_array(row, columns, rows);
     lv_obj_set_style_pad_left(row, 16, LV_PART_MAIN);

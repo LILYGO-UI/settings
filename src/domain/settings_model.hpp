@@ -1,6 +1,8 @@
 #ifndef LILYGO_UI_SETTINGS_DOMAIN_SETTINGS_MODEL_HPP
 #define LILYGO_UI_SETTINGS_DOMAIN_SETTINGS_MODEL_HPP
 
+#include "pages/battery/battery_model.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -21,6 +23,9 @@ struct SettingsEnvironment {
     std::string storage_path;
     std::string nmcli;
     std::string bluetoothctl;
+    // Optional privilege helper used for NetworkManager profile writes.  Test
+    // environments may leave this empty to run their command shim directly.
+    std::string sudo;
 
     static SettingsEnvironment from_process_environment();
 };
@@ -52,27 +57,6 @@ struct WifiNetwork {
 struct BluetoothDevice {
     std::string address;
     std::string name;
-};
-
-struct BatteryState {
-    bool available = false;
-    std::string status;
-    std::string health;
-    std::string technology;
-    int capacity_percent                = 0;
-    int cycle_count                     = 0;
-    std::int64_t voltage_uv             = 0;
-    std::int64_t current_ua             = 0;
-    std::int64_t temperature_tenths_c   = 0;
-    std::int64_t charge_full_uah        = 0;
-    std::int64_t charge_full_design_uah = 0;
-    bool has_capacity                   = false;
-    bool has_cycle_count                = false;
-    bool has_voltage                    = false;
-    bool has_current                    = false;
-    bool has_temperature                = false;
-    bool has_charge_full                = false;
-    bool has_charge_full_design         = false;
 };
 
 struct AboutState {
@@ -107,6 +91,7 @@ public:
     void mark_network_manager_wifi_radio_refresh_failed() noexcept;
     [[nodiscard]] bool update_wifi_networks(std::string_view output);
     [[nodiscard]] bool update_bluetooth_devices(std::string_view output);
+    [[nodiscard]] bool update_bluetooth_device_name(std::string_view address, std::string_view output);
     [[nodiscard]] bool update_bluetooth_controller(std::string_view output);
     void mark_bluetooth_controller_unavailable() noexcept;
     void mark_bluetooth_service_unavailable() noexcept;
@@ -134,6 +119,8 @@ public:
     [[nodiscard]] std::size_t wifi_network_generation() const noexcept;
     [[nodiscard]] std::size_t bluetooth_device_generation() const noexcept;
     [[nodiscard]] const BatteryState &battery() const noexcept;
+    [[nodiscard]] BatteryModel &battery_details() noexcept;
+    [[nodiscard]] const BatteryModel &battery_details() const noexcept;
     [[nodiscard]] const AboutState &about() const noexcept;
     [[nodiscard]] const WifiNetwork *connected_wifi() const noexcept;
 
@@ -148,7 +135,7 @@ private:
     std::vector<NetworkInterface> ethernet_interfaces_;
     std::vector<WifiNetwork> wifi_networks_;
     std::vector<BluetoothDevice> bluetooth_devices_;
-    BatteryState battery_;
+    BatteryModel battery_;
     AboutState about_;
     bool wifi_available_                      = false;
     bool bluetooth_available_                 = false;

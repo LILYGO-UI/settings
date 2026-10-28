@@ -1,0 +1,492 @@
+diff --git a/modules/bq27xxx/bq27xxx_battery.c b/modules/bq27xxx/bq27xxx_battery.c
+--- a/modules/bq27xxx/bq27xxx_battery.c
++++ b/modules/bq27xxx/bq27xxx_battery.c
+@@ -51,6 +51,7 @@
+ #include <linux/delay.h>
+ #include <linux/platform_device.h>
+ #include <linux/power_supply.h>
++#include <linux/property.h>
+ #include <linux/slab.h>
+ #include <linux/of.h>
+ #include <linux/version.h>
+@@ -2087,13 +2088,20 @@
+ 	int ret = 0;
+ 	struct bq27xxx_device_info *di = power_supply_get_drvdata(psy);
+ 
+-	mutex_lock(&di->lock);
++	/* UI readers must not wait through a multi-second capacity update. */
++	if (di->chip == BQ27220) {
++		if (!mutex_trylock(&di->lock))
++			return -EBUSY;
++	} else {
++		mutex_lock(&di->lock);
++	}
+ 	if (time_is_before_jiffies(di->last_update + 5 * HZ))
+ 		bq27xxx_battery_update_unlocked(di);
+-	mutex_unlock(&di->lock);
+-
+-	if (psp != POWER_SUPPLY_PROP_PRESENT && di->cache.flags < 0)
+-		return di->cache.flags;
++
++	if (psp != POWER_SUPPLY_PROP_PRESENT && di->cache.flags < 0) {
++		ret = di->cache.flags;
++		goto out;
++	}
+ 
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_STATUS:
+@@ -2150,7 +2158,8 @@
+ 	 */
+ 	case POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN:
+ 	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
+-		return -EINVAL;
++		ret = -EINVAL;
++		break;
+ 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
+ 		ret = bq27xxx_battery_read_cyct(di, val);
+ 		break;
+@@ -2167,11 +2176,371 @@
+ 		val->strval = BQ27XXX_MANUFACTURER;
+ 		break;
+ 	default:
++		ret = -EINVAL;
++		break;
++	}
++
++out:
++	mutex_unlock(&di->lock);
++	return ret;
++}
++
++/*
++ * BQ27220 capacity calibration, TI SLUUBD4A sections 2.27, 3.3 and 6.1.
++ * Only explicit sysfs stores change security or RAM; reads use standard data.
++ */
++#define BQ27220_OP_STATUS       0x3a
++#define BQ27220_MAC             0x3e
++#define BQ27220_MAC_DATA        0x40
++#define BQ27220_MAC_SUM         0x60
++#define BQ27220_DM_FCC          0x929d
++#define BQ27220_DM_RESERVE      0x926d
++#define BQ27220_CFGUPDATE       BIT(10)
++#define BQ27220_CALMD           BIT(0)
++#define BQ27220_VDQ             BIT(4)
++#define BQ27220_SEC_MASK        0x06
++#define BQ27220_SEC_FULL        0x02
++#define BQ27220_SEC_UNSEALED    0x04
++#define BQ27220_SEC_SEALED      0x06
++
++struct bq27220_capacity_block {
++	u8 data[32];
++	u8 length;
++};
++
++static int bq27220_control(struct bq27xxx_device_info *di, u16 command)
++{
++	int ret = di->bus.write(di, 0x00, command, false);
++
++	usleep_range(2000, 2500);
++	return ret;
++}
++
++static int bq27220_wait_status(struct bq27xxx_device_info *di, int mask,
++			       int expected)
++{
++	int i, status;
++
++	for (i = 0; i < 40; i++) {
++		status = di->bus.read(di, BQ27220_OP_STATUS, false);
++		if (status < 0)
++			return status;
++		if ((status & mask) == expected)
++			return 0;
++		msleep(50);
++	}
++	return -ETIMEDOUT;
++}
++
++static int bq27220_key_pair(struct bq27xxx_device_info *di, u16 key,
++			    int expected)
++{
++	int ret;
++
++	ret = bq27220_control(di, key);
++	if (ret < 0)
++		return ret;
++	ret = bq27220_control(di, key);
++	if (ret < 0)
++		return ret;
++	ret = bq27220_wait_status(di, BQ27220_SEC_MASK, expected);
++	return ret == -ETIMEDOUT ? -EACCES : ret;
++}
++
++static int bq27220_full_access(struct bq27xxx_device_info *di, int original)
++{
++	int ret;
++
++	if (original == BQ27220_SEC_SEALED) {
++		/* Documented ROM default only; never guess other keys. */
++		ret = bq27220_key_pair(di, 0x8000, BQ27220_SEC_UNSEALED);
++		if (ret < 0)
++			return ret;
++	}
++	if (original != BQ27220_SEC_FULL)
++		return bq27220_key_pair(di, 0xffff, BQ27220_SEC_FULL);
++	return 0;
++}
++
++static int bq27220_restore_security(struct bq27xxx_device_info *di, int original)
++{
++	int ret;
++
++	ret = di->bus.read(di, BQ27220_OP_STATUS, false);
++	if (ret >= 0 && (ret & BQ27220_SEC_MASK) == original)
++		return 0;
++	if (original == BQ27220_SEC_FULL)
++		return ret < 0 ? ret : -EACCES;
++	ret = bq27220_control(di, 0x0030);
++	if (ret < 0)
++		return ret;
++	ret = bq27220_wait_status(di, BQ27220_SEC_MASK, BQ27220_SEC_SEALED);
++	if (ret < 0 || original == BQ27220_SEC_SEALED)
++		return ret;
++	return bq27220_key_pair(di, 0x8000, BQ27220_SEC_UNSEALED);
++}
++
++static u8 bq27220_block_checksum(u16 address,
++				 const struct bq27220_capacity_block *block)
++{
++	u8 sum = (address & 0xff) + (address >> 8);
++	int i;
++
++	for (i = 0; i < block->length - 4; i++)
++		sum += block->data[i];
++	return 0xff - sum;
++}
++
++static int bq27220_read_capacity_block(struct bq27xxx_device_info *di,
++				       u16 address,
++				       struct bq27220_capacity_block *block)
++{
++	int ret, metadata;
++
++	ret = di->bus.write(di, BQ27220_MAC, address, false);
++	if (ret < 0)
++		return ret;
++	usleep_range(2000, 2500);
++	ret = di->bus.read(di, BQ27220_MAC, false);
++	if (ret < 0)
++		return ret;
++	if (ret != address)
++		return -EIO;
++	metadata = di->bus.read(di, BQ27220_MAC_SUM, false);
++	if (metadata < 0)
++		return metadata;
++	block->length = metadata >> 8;
++	if (block->length < 8 || block->length > 36)
++		return -EPROTO;
++	ret = di->bus.read_bulk(di, BQ27220_MAC_DATA, block->data,
++				block->length - 4);
++	if (ret < 0)
++		return ret;
++	return bq27220_block_checksum(address, block) == (metadata & 0xff) ?
++		0 : -EBADMSG;
++}
++
++static int bq27220_write_capacity_block(struct bq27xxx_device_info *di,
++					struct bq27220_capacity_block *block)
++{
++	struct bq27220_capacity_block verify;
++	int ret;
++
++	ret = di->bus.write(di, BQ27220_MAC, BQ27220_DM_FCC, false);
++	if (ret < 0)
++		return ret;
++	usleep_range(2000, 2500);
++	ret = di->bus.write_bulk(di, BQ27220_MAC_DATA, block->data,
++				 block->length - 4);
++	if (ret < 0)
++		return ret;
++	/* The checksum and length must be sent together (TRM section 2.31). */
++	ret = di->bus.write(di, BQ27220_MAC_SUM,
++		bq27220_block_checksum(BQ27220_DM_FCC, block) |
++		(block->length << 8), false);
++	if (ret < 0)
++		return ret;
++	msleep(100);
++	ret = bq27220_read_capacity_block(di, BQ27220_DM_FCC, &verify);
++	if (ret < 0)
++		return ret;
++	if (verify.length != block->length ||
++	    memcmp(verify.data, block->data, block->length - 4))
++		return -EIO;
++	return 0;
++}
++
++static int bq27220_enter_config(struct bq27xxx_device_info *di)
++{
++	int ret = bq27220_control(di, 0x0090);
++
++	if (ret < 0)
++		return ret;
++	/* Section 2.2.21 requires at least two seconds before reading the flag. */
++	msleep(2000);
++	return bq27220_wait_status(di, BQ27220_CFGUPDATE, BQ27220_CFGUPDATE);
++}
++
++static int bq27220_exit_config(struct bq27xxx_device_info *di, bool reinit)
++{
++	int ret = bq27220_control(di, reinit ? 0x0091 : 0x0092);
++
++	if (ret < 0)
++		return ret;
++	msleep(2000);
++	return bq27220_wait_status(di, BQ27220_CFGUPDATE, 0);
++}
++
++static int bq27220_apply_capacity(struct bq27xxx_device_info *di,
++				  unsigned int design, unsigned int full)
++{
++	struct bq27220_capacity_block original, updated, reserve;
++	bool entered = false, write_attempted = false;
++	u32 clock_hz;
++	int ret, cleanup, security, reserve_mah, seed;
++
++	/* Multi-byte writes require <= 100 kHz (SLUUBD4A section 5.3). */
++	if (!di->dev->parent ||
++	    device_property_read_u32(di->dev->parent, "clock-frequency", &clock_hz) ||
++	    !clock_hz || clock_hz > 100000)
++		return -EOPNOTSUPP;
++	ret = di->bus.read(di, BQ27220_OP_STATUS, false);
++	if (ret < 0)
++		return ret;
++	if (ret & (BQ27220_CFGUPDATE | BQ27220_CALMD | BQ27220_VDQ))
++		return -EBUSY;
++	security = ret & BQ27220_SEC_MASK;
++	if (security == 0)
++		return -EACCES;
++	ret = bq27220_full_access(di, security);
++	if (ret < 0)
++		goto restore_security;
++	/* Set before the command: an I2C error can follow an accepted command. */
++	entered = true;
++	ret = bq27220_enter_config(di);
++	if (ret < 0)
++		goto exit_config;
++	ret = bq27220_read_capacity_block(di, BQ27220_DM_RESERVE, &reserve);
++	if (ret < 0)
++		goto exit_config;
++	reserve_mah = (reserve.data[0] << 8) | reserve.data[1];
++	seed = full + reserve_mah;
++	if (reserve_mah > 32767 || seed > 32767) {
++		ret = -ERANGE;
++		goto exit_config;
++	}
++	ret = bq27220_read_capacity_block(di, BQ27220_DM_FCC, &original);
++	if (ret < 0)
++		goto exit_config;
++	updated = original;
++	updated.data[0] = seed >> 8;
++	updated.data[1] = seed;
++	updated.data[2] = design >> 8;
++	updated.data[3] = design;
++	write_attempted = true;
++	ret = bq27220_write_capacity_block(di, &updated);
++	if (ret < 0)
++		goto rollback;
++	ret = bq27220_exit_config(di, true);
++	if (ret < 0)
++		goto rollback;
++	entered = false;
++	ret = di->bus.read(di, 0x3c, false);
++	if (ret >= 0)
++		ret = ret == design ? 0 : -EIO;
++	if (!ret) {
++		ret = di->bus.read(di, 0x12, false);
++		if (ret >= 0)
++			ret = ret == full ? 0 : -EIO;
++	}
++	if (!ret)
++		goto restore_security;
++rollback:
++	/* A bus failure can leave changed RAM: restore and verify when possible. */
++	if (write_attempted) {
++		cleanup = di->bus.read(di, BQ27220_OP_STATUS, false);
++		if (cleanup >= 0 && !(cleanup & BQ27220_CFGUPDATE)) {
++			entered = true;
++			cleanup = bq27220_enter_config(di);
++		} else if (cleanup >= 0) {
++			entered = true;
++			cleanup = 0;
++		}
++		if (!cleanup)
++			cleanup = bq27220_write_capacity_block(di, &original);
++		if (cleanup < 0)
++			dev_err(di->dev, "capacity rollback failed: %d; inspect gauge\n",
++				cleanup);
++	}
++exit_config:
++	if (entered) {
++		cleanup = bq27220_exit_config(di, write_attempted);
++		if (cleanup < 0) {
++			dev_err(di->dev, "capacity config exit failed: %d\n", cleanup);
++			ret = cleanup;
++		}
++	}
++restore_security:
++	cleanup = bq27220_restore_security(di, security);
++	if (cleanup < 0) {
++		dev_err(di->dev, "capacity security restore failed: %d\n", cleanup);
++		ret = cleanup;
++	}
++	return ret;
++}
++
++static ssize_t calibration_capacity_show(struct device *dev,
++					 struct device_attribute *attr, char *buf)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct bq27xxx_device_info *di = power_supply_get_drvdata(psy);
++	int design, full;
++
++	if (!mutex_trylock(&di->lock))
++		return -EBUSY;
++	design = di->bus.read(di, 0x3c, false);
++	full = design < 0 ? design : di->bus.read(di, 0x12, false);
++	mutex_unlock(&di->lock);
++	if (full < 0)
++		return full;
++	return sysfs_emit(buf, "%d %d\n", design, full);
++}
++
++static ssize_t calibration_capacity_store(struct device *dev,
++					  struct device_attribute *attr,
++					  const char *buf, size_t count)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct bq27xxx_device_info *di = power_supply_get_drvdata(psy);
++	unsigned int design, full;
++	char input[32], *cursor, *token;
++	unsigned int values[2];
++	int n = 0;
++	int ret;
++
++	if (!count || count >= sizeof(input) || memchr(buf, '\0', count))
+ 		return -EINVAL;
+-	}
+-
+-	return ret;
+-}
++	memcpy(input, buf, count);
++	input[count] = '\0';
++	cursor = input;
++	while ((token = strsep(&cursor, " \t\r\n")) != NULL) {
++		if (!*token)
++			continue;
++		if (n == 2 || kstrtouint(token, 10, &values[n]) ||
++		    !values[n] || values[n] > 32767)
++			return -EINVAL;
++		n++;
++	}
++	if (n != 2)
++		return -EINVAL;
++	design = values[0];
++	full = values[1];
++	mutex_lock(&di->lock);
++	ret = bq27220_apply_capacity(di, design, full);
++	/* Invalidate the cached design capacity even after an uncertain failure. */
++	di->charge_design_full = 0;
++	di->last_update = jiffies - 6 * HZ;
++	mutex_unlock(&di->lock);
++	power_supply_changed(psy);
++	return ret < 0 ? ret : count;
++}
++
++static DEVICE_ATTR_RW(calibration_capacity);
++
++static struct attribute *bq27220_capacity_attrs[] = {
++	&dev_attr_calibration_capacity.attr,
++	NULL,
++};
++
++static const struct attribute_group bq27220_capacity_group = {
++	.attrs = bq27220_capacity_attrs,
++};
++
++static const struct attribute_group *bq27220_capacity_groups[] = {
++	&bq27220_capacity_group,
++	NULL,
++};
++
+ 
+ static void bq27xxx_external_power_changed(struct power_supply *psy)
+ {
+@@ -2223,6 +2592,9 @@
+ 	psy_desc->num_properties = bq27xxx_chip_data[di->chip].props_size;
+ 	psy_desc->get_property = bq27xxx_battery_get_property;
+ 	psy_desc->external_power_changed = bq27xxx_external_power_changed;
++	if (di->chip == BQ27220 && di->bus.write &&
++	    di->bus.read_bulk && di->bus.write_bulk)
++		psy_cfg.attr_grp = bq27220_capacity_groups;
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+ 	di->bat = devm_power_supply_register(di->dev, psy_desc, &psy_cfg);
+diff --git a/modules/bq27xxx/bq27xxx_battery_i2c.c b/modules/bq27xxx/bq27xxx_battery_i2c.c
+--- a/modules/bq27xxx/bq27xxx_battery_i2c.c
++++ b/modules/bq27xxx/bq27xxx_battery_i2c.c
+@@ -51,6 +51,8 @@
+ 
+ 	do {
+ 		ret = i2c_transfer(client->adapter, msg, ARRAY_SIZE(msg));
++		if (di->chip == BQ27220)
++			usleep_range(66, 100);
+ 		if (ret == -EBUSY && ++retry < 3) {
+ 			/* sleep 10 milliseconds when busy */
+ 			usleep_range(10000, 11000);
+@@ -61,6 +63,9 @@
+ 
+ 	if (ret < 0)
+ 		return ret;
++
++	if (ret != ARRAY_SIZE(msg))
++		return -EIO;
+ 
+ 	if (!single)
+ 		ret = get_unaligned_le16(data);
+@@ -95,6 +100,8 @@
+ 	msg.flags = 0;
+ 
+ 	ret = i2c_transfer(client->adapter, &msg, 1);
++	if (di->chip == BQ27220)
++		usleep_range(66, 100);
+ 	if (ret < 0)
+ 		return ret;
+ 	if (ret != 1)
+@@ -112,6 +119,8 @@
+ 		return -ENODEV;
+ 
+ 	ret = i2c_smbus_read_i2c_block_data(client, reg, len, data);
++	if (di->chip == BQ27220)
++		usleep_range(66, 100);
+ 	if (ret < 0)
+ 		return ret;
+ 	if (ret != len)
+@@ -129,6 +138,9 @@
+ 
+ 	if (!client->adapter)
+ 		return -ENODEV;
++
++	if (len < 1 || len > sizeof(buf) - 1)
++		return -EINVAL;
+ 
+ 	buf[0] = reg;
+ 	memcpy(&buf[1], data, len);
+@@ -139,6 +151,8 @@
+ 	msg.len = len + 1;
+ 
+ 	ret = i2c_transfer(client->adapter, &msg, 1);
++	if (di->chip == BQ27220)
++		usleep_range(66, 100);
+ 	if (ret < 0)
+ 		return ret;
+ 	if (ret != 1)

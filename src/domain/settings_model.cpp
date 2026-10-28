@@ -54,6 +54,17 @@ bool same_bluetooth_devices(const std::vector<BluetoothDevice> &left, const std:
     return true;
 }
 
+bool same_bluetooth_address(std::string_view left, std::string_view right)
+{
+    if (left.size() != 17U || right.size() != 17U) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        const auto a = static_cast<unsigned char>(left[index]);
+        const auto b = static_cast<unsigned char>(right[index]);
+        if (std::tolower(a) != std::tolower(b)) return false;
+    }
+    return true;
+}
+
 std::string normalized_value(std::string_view value)
 {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -78,12 +89,14 @@ SettingsEnvironment SettingsEnvironment::from_process_environment()
         environment_value("CM0_DEVICE_SERIAL_FILE", "/proc/device-tree/serial-number"),
         environment_value("CM0_MEMINFO_FILE", "/proc/meminfo"),
         environment_value("CM0_STORAGE_PATH", "/"),
-        environment_value("CM0_NMCLI", "nmcli"),
+        environment_value("CM0_NMCLI", "/usr/bin/nmcli"),
         environment_value("CM0_BLUETOOTHCTL", "bluetoothctl"),
+        environment_value("LILYGO_UI_SUDO", "/usr/bin/sudo"),
     };
 }
 
-SettingsModel::SettingsModel(SettingsEnvironment environment) : environment_(std::move(environment))
+SettingsModel::SettingsModel(SettingsEnvironment environment)
+    : environment_(std::move(environment)), battery_(environment_.power_supply_root)
 {
 }
 
@@ -191,32 +204,7 @@ void SettingsModel::clear_stale_wifi_connection() noexcept
 
 void SettingsModel::refresh_battery()
 {
-    platform::settings_battery_t source{};
-    if (platform::settings_battery_read(environment_.power_supply_root.c_str(), &source) !=
-        platform::SETTINGS_BACKEND_OK) {
-        battery_ = {};
-        return;
-    }
-    battery_ = {
-        true,
-        source.status,
-        source.health,
-        source.technology,
-        source.capacity_percent,
-        source.cycle_count,
-        source.voltage_uv,
-        source.current_ua,
-        source.temperature_tenths_c,
-        source.charge_full_uah,
-        source.charge_full_design_uah,
-        source.has_capacity,
-        source.has_cycle_count,
-        source.has_voltage,
-        source.has_current,
-        source.has_temperature,
-        source.has_charge_full,
-        source.has_charge_full_design,
-    };
+    battery_.refresh();
 }
 
 void SettingsModel::refresh_about()
@@ -339,6 +327,25 @@ bool SettingsModel::update_bluetooth_devices(std::string_view output)
         ++bluetooth_device_generation_;
     }
     return true;
+}
+
+bool SettingsModel::update_bluetooth_device_name(std::string_view address, std::string_view output)
+{
+    platform::settings_bluetooth_device_t parsed{};
+    const std::string text(output);
+    if (platform::settings_bluetooth_parse_info(text.c_str(), &parsed) != platform::SETTINGS_BACKEND_OK)
+        return false;
+    if (!same_bluetooth_address(parsed.address, address)) return false;
+    for (auto &device : bluetooth_devices_) {
+        if (same_bluetooth_address(device.address, parsed.address)) {
+            if (device.name != parsed.name) {
+                device.name = parsed.name;
+                ++bluetooth_device_generation_;
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 bool SettingsModel::update_bluetooth_controller(std::string_view output)
@@ -486,6 +493,16 @@ std::size_t SettingsModel::bluetooth_device_generation() const noexcept
     return bluetooth_device_generation_;
 }
 const BatteryState &SettingsModel::battery() const noexcept
+{
+    return battery_.battery();
+}
+
+BatteryModel &SettingsModel::battery_details() noexcept
+{
+    return battery_;
+}
+
+const BatteryModel &SettingsModel::battery_details() const noexcept
 {
     return battery_;
 }

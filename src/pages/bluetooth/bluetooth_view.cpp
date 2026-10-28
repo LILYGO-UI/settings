@@ -101,8 +101,9 @@ void BluetoothView::rebuild_devices()
         const auto &devices = view_model_.devices();
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto &device = devices[index];
-            lv_obj_t *row = components::create_dynamic_row(device_group_, device.name.c_str(), device.address.c_str(),
-                                                           "", false, false);
+            const char *title = device.name.empty() ? "Unknown Device" : device.name.c_str();
+            lv_obj_t *row = components::create_dynamic_row(device_group_, title, device.address.c_str(), "", false,
+                                                           false);
             lv_obj_set_user_data(row, reinterpret_cast<void *>(static_cast<std::uintptr_t>(index + 1U)));
             lv_obj_add_event_cb(row, device_clicked, LV_EVENT_CLICKED, this);
         }
@@ -115,8 +116,7 @@ void BluetoothView::rebuild_devices()
 
 void BluetoothView::create_empty_row(const char *message)
 {
-    lv_obj_t *row = components::create_dynamic_row(device_group_, message, "", "", false, false);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    (void)components::create_dynamic_row(device_group_, message, "", "", false, false, false);
     set_group_height(1);
 }
 

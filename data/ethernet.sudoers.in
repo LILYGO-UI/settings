@@ -1,0 +1,6 @@
+# @LILYGO_UI_APP_ID@: Ethernet NetworkManager profile control for existing
+# administrator users. The application validates address fields before
+# invoking nmcli and uses sudo -n so a password prompt cannot block the UI.
+# Only the IPv4 properties edited by the Ethernet page are authorized.
+%sudo ALL=(root) NOPASSWD: /usr/bin/nmcli connection modify * ipv4.method manual ipv4.addresses * ipv4.gateway * ipv4.dns *
+%sudo ALL=(root) NOPASSWD: /usr/bin/nmcli connection up *

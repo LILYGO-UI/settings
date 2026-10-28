@@ -5,6 +5,7 @@
 #include "domain/settings_command_runner.hpp"
 #include "domain/settings_model.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -38,7 +39,10 @@ public:
     [[nodiscard]] lv_subject_t *revision_subject() noexcept;
 
 private:
-    [[nodiscard]] bool start(SettingsCommand command, std::vector<std::string> arguments, const char *progress);
+    [[nodiscard]] bool start(SettingsCommand command, std::vector<std::string> arguments, const char *progress,
+                             std::chrono::milliseconds timeout = std::chrono::seconds(30));
+    [[nodiscard]] bool start_next_device_info();
+    void clear_pending_device_info() noexcept;
     void update_list_generation() noexcept;
     [[nodiscard]] std::string derived_status() const;
 
@@ -47,6 +51,8 @@ private:
     BluetoothPresentation presentation_;
     std::string status_override_;
     bool scan_pending_                     = false;
+    std::vector<std::string> pending_info_addresses_;
+    std::size_t pending_info_index_         = 0;
     std::size_t list_generation_           = 0;
     std::size_t observed_model_generation_ = 0;
     bool observed_list_state_valid_        = false;
