@@ -84,6 +84,16 @@ target_link_libraries(lilygo_ui_settings_power PRIVATE lilygo_ui_settings_core)
 target_compile_options(lilygo_ui_settings_power PRIVATE -Wall -Wextra -Wpedantic)
 set_target_properties(lilygo_ui_settings_power PROPERTIES OUTPUT_NAME "${LILYGO_UI_PACKAGE_NAME}-power")
 
+# BlueZ exposes device names through org.bluez.Device1 on the system D-Bus.
+# The helper loads libsystemd's public sd-bus ABI at runtime so the source
+# build does not need to vendor a target-specific development sysroot.
+add_executable(lilygo_ui_settings_bluetooth src/tools/bluetooth_dbus_main.cpp)
+target_compile_options(lilygo_ui_settings_bluetooth PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_features(lilygo_ui_settings_bluetooth PRIVATE cxx_std_17)
+target_link_libraries(lilygo_ui_settings_bluetooth PRIVATE ${CMAKE_DL_LIBS})
+set_target_properties(lilygo_ui_settings_bluetooth PROPERTIES
+    OUTPUT_NAME "${LILYGO_UI_PACKAGE_NAME}-bluetooth")
+
 configure_file(data/power.sudoers.in
     ${CMAKE_CURRENT_BINARY_DIR}/${LILYGO_UI_PACKAGE_NAME}-power.sudoers @ONLY)
 configure_file(data/launcher.json.in
@@ -122,6 +132,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # ("etc") for the /usr device prefix, which would otherwise package the
     # policy under /usr/etc/sudoers.d where sudo ignores it.
     install(TARGETS lilygo_ui_settings_power RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR} COMPONENT app)
+    install(TARGETS lilygo_ui_settings_bluetooth RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR} COMPONENT app)
     set(LILYGO_UI_SUDOERS_DIR "/etc/sudoers.d")
     configure_file(data/conffiles.in ${CMAKE_CURRENT_BINARY_DIR}/conffiles @ONLY)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${LILYGO_UI_PACKAGE_NAME}-power.sudoers
@@ -323,7 +334,7 @@ set(CPACK_COMPONENTS_ALL app)
 set(CPACK_DEBIAN_APP_PACKAGE_NAME "${LILYGO_UI_PACKAGE_NAME}")
 set(CPACK_DEBIAN_APP_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_APP_PACKAGE_DEPENDS
-    "libc6, libstdc++6, libdrm2, libfreetype6, sudo (>= 1.9.10), lilygo-ui-appkit-dev (>= ${LILYGO_UI_MIN_APPKIT_VERSION})")
+    "bluez, libc6, libstdc++6, libdrm2, libfreetype6, libsystemd0, sudo (>= 1.9.10), lilygo-ui-appkit-dev (>= ${LILYGO_UI_MIN_APPKIT_VERSION})")
 if(LILYGO_UI_GRAPHICS_DEBIAN_DEPENDS)
     string(APPEND CPACK_DEBIAN_APP_PACKAGE_DEPENDS
         ", ${LILYGO_UI_GRAPHICS_DEBIAN_DEPENDS}")

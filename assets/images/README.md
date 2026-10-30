@@ -10,5 +10,6 @@ design vectors; the PNG files are the 42 x 42 pixel sources embedded by
 | `settings-wifi` | `90:31` (`Wi-Fi Icon Tile`) |
 | `settings-bluetooth` | `90:43` (`Bluetooth Icon Tile`) |
 | `settings-ethernet` | `90:53` (`Ethernet Icon Tile`) |
+| `settings-cellular` | Cellular signal icon tile |
 | `settings-battery` | `90:64` (`Battery Icon Tile`) |
 | `settings-general` | `90:76` (`General Icon Tile`) |

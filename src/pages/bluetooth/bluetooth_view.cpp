@@ -36,9 +36,12 @@ lv_obj_t *BluetoothView::create(lv_obj_t *parent)
     status_ = components::create_label(root_, "Searching...", 16, components::theme::section_label,
                                        "settings_bluetooth_status");
     constrain(status_);
-    constrain(components::create_section_label(root_, "DEVICES"));
+    constrain(components::create_section_label(root_, "MY DEVICES"));
     device_group_ = components::create_group(root_, "settings_bluetooth_device_group");
     constrain(device_group_);
+    constrain(components::create_section_label(root_, "OTHER DEVICES"));
+    other_device_group_ = components::create_group(root_, "settings_bluetooth_other_devices_group");
+    constrain(other_device_group_);
 
     lv_obj_add_event_cb(switch_, switch_changed, LV_EVENT_VALUE_CHANGED, this);
     lv_subject_add_observer_obj(view_model_.revision_subject(), presentation_changed, root_, this);
@@ -49,7 +52,7 @@ lv_obj_t *BluetoothView::create(lv_obj_t *parent)
 void BluetoothView::destroy() noexcept
 {
     if (root_ && lv_obj_is_valid(root_)) lv_obj_delete(root_);
-    root_ = switch_ = status_ = device_group_ = nullptr;
+    root_ = switch_ = status_ = device_group_ = other_device_group_ = nullptr;
     rendered_generation_                      = std::numeric_limits<std::size_t>::max();
     rendered_available_                       = false;
     rendered_enabled_                         = false;
@@ -90,39 +93,50 @@ void BluetoothView::render() noexcept
 void BluetoothView::rebuild_devices()
 {
     lv_obj_clean(device_group_);
+    lv_obj_clean(other_device_group_);
     const auto &state = view_model_.presentation();
-    if (!state.available)
-        create_empty_row("Bluetooth Unavailable");
-    else if (!state.enabled)
-        create_empty_row("Bluetooth Is Off");
-    else if (view_model_.devices().empty())
-        create_empty_row("No Devices Found");
-    else {
-        const auto &devices = view_model_.devices();
-        for (std::size_t index = 0; index < devices.size(); ++index) {
-            const auto &device = devices[index];
-            const char *title = device.name.empty() ? "Unknown Device" : device.name.c_str();
-            lv_obj_t *row = components::create_dynamic_row(device_group_, title, device.address.c_str(), "", false,
-                                                           false);
-            lv_obj_set_user_data(row, reinterpret_cast<void *>(static_cast<std::uintptr_t>(index + 1U)));
-            lv_obj_add_event_cb(row, device_clicked, LV_EVENT_CLICKED, this);
-        }
-        set_group_height(devices.size());
+    if (!state.available) {
+        create_empty_row(device_group_, "Bluetooth Unavailable");
+        create_empty_row(other_device_group_, "Bluetooth Unavailable");
+    } else if (!state.enabled) {
+        create_empty_row(device_group_, "Bluetooth Is Off");
+        create_empty_row(other_device_group_, "Bluetooth Is Off");
+    } else {
+        rebuild_group(device_group_, true);
+        rebuild_group(other_device_group_, false);
     }
     rendered_generation_ = state.list_generation;
     rendered_available_  = state.available;
     rendered_enabled_    = state.enabled;
 }
 
-void BluetoothView::create_empty_row(const char *message)
+void BluetoothView::create_empty_row(lv_obj_t *group, const char *message)
 {
-    (void)components::create_dynamic_row(device_group_, message, "", "", false, false, false);
-    set_group_height(1);
+    (void)components::create_dynamic_row(group, message, "", "", false, false, false);
+    lv_obj_update_layout(group);
+    std::int32_t height = 2;
+    for (std::uint32_t index = 0; index < lv_obj_get_child_count(group); ++index)
+        height += lv_obj_get_height(lv_obj_get_child(group, static_cast<std::int32_t>(index)));
+    lv_obj_set_height(group, height);
 }
 
-void BluetoothView::set_group_height(std::size_t rows) noexcept
+void BluetoothView::rebuild_group(lv_obj_t *group, bool paired)
 {
-    if (device_group_) lv_obj_set_height(device_group_, static_cast<std::int32_t>(rows * 83U));
+    const auto &devices = view_model_.devices();
+    std::size_t visible = 0;
+    for (std::size_t index = 0; index < devices.size(); ++index) {
+        const auto &device = devices[index];
+        if (device.paired != paired) continue;
+        const char *title = device.name.empty() ? "Unknown Device" : device.name.c_str();
+        lv_obj_t *row = components::create_dynamic_row(group, title, device.address.c_str(), "", false, false, true);
+        lv_obj_set_user_data(row, reinterpret_cast<void *>(static_cast<std::uintptr_t>(index + 1U)));
+        lv_obj_add_event_cb(row, device_clicked, LV_EVENT_CLICKED, this);
+        ++visible;
+    }
+    if (visible == 0) create_empty_row(group, paired ? "No Paired Devices" : "No Devices Found");
+    else {
+        lv_obj_set_height(group, 2 + static_cast<std::int32_t>(visible * 82U));
+    }
 }
 
 }  // namespace lilygo::settings

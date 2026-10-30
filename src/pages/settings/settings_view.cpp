@@ -205,6 +205,9 @@ void SettingsView::navigate_from(const char *object_name)
     else
         return;
 
+    const auto previous = router_.current_page();
+    if (previous == SettingsPage::bluetooth && destination != SettingsPage::bluetooth)
+        view_model_.bluetooth().stop_continuous_scan();
     router_.navigate(destination);
     update_landscape_selection();
     if (destination == SettingsPage::sharing) view_model_.sharing().refresh();
@@ -212,8 +215,8 @@ void SettingsView::navigate_from(const char *object_name)
     if (destination == SettingsPage::keyboard) view_model_.keyboard().refresh();
     if (destination == SettingsPage::wifi && view_model_.wifi().networks().empty())
         view_model_.wifi().scan();
-    else if (destination == SettingsPage::bluetooth && view_model_.bluetooth().devices().empty())
-        view_model_.bluetooth().scan();
+    else if (destination == SettingsPage::bluetooth)
+        view_model_.bluetooth().start_continuous_scan();
 }
 
 void SettingsView::update_layout() noexcept
@@ -328,8 +331,8 @@ bool SettingsView::create_landscape_sidebar()
                                                               false, false, kLandscapeRows[1]);
     const auto ethernet = components::create_image_menu_row(connectivity_group, &assets::ethernet_icon, "Ethernet", "",
                                                             false, false, kLandscapeRows[2]);
-    const auto cellular = components::create_menu_row(connectivity_group, LV_SYMBOL_CALL, "Cellular", "", false,
-                                                       false, kLandscapeRows[6]);
+    const auto cellular = components::create_image_menu_row(connectivity_group, &assets::cellular_icon, "Cellular", "", false,
+                                                             false, kLandscapeRows[6]);
     const auto battery = components::create_image_menu_row(connectivity_group, &assets::battery_icon, "Battery", "", false,
                                                            false, kLandscapeRows[3]);
     const auto general = components::create_image_menu_row(general_group, &assets::general_icon, "General", "", false,

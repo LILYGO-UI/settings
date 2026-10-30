@@ -1160,7 +1160,7 @@ void assert_scenario(const std::string &scenario, lv_obj_t *root)
         assert_menu_row_content_centered(root, "settings_home_wifi_row", "Wi-Fi");
         assert_menu_row_content_centered(root, "settings_home_bluetooth_row", "Bluetooth");
         assert_menu_row_content_centered(root, "settings_home_ethernet_row", "Ethernet");
-        assert_menu_row_content_centered(root, "settings_home_cellular_row", "Cellular", false);
+        assert_menu_row_content_centered(root, "settings_home_cellular_row", "Cellular");
         assert_menu_row_content_centered(root, "settings_home_battery_row", "Battery");
         assert_menu_row_content_centered(root, "settings_home_general_row", "General");
         if (display_width < 400 && display_height < 720) assert_compact_home_avoids_system_area(root);
@@ -1365,6 +1365,7 @@ void assert_landscape_content_reachable(const std::string &scenario, lv_obj_t *r
     for (const char *name : {"settings_landscape_wifi_row", "settings_landscape_bluetooth_row",
                              "settings_landscape_ethernet_row", "settings_landscape_cellular_row", "settings_landscape_battery_row"})
         assert(lv_obj_get_parent(find_named(root, name)) == connectivity_group);
+    assert_menu_row_content_centered(root, "settings_landscape_cellular_row", "Cellular");
     assert(lv_obj_get_parent(find_named(root, "settings_landscape_general_row")) == general_group);
     assert(lv_obj_get_parent(find_named(root, "settings_landscape_keyboard_row")) == keyboard_group);
 

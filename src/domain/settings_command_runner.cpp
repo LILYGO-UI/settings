@@ -85,7 +85,9 @@ bool settings_command_is_background(SettingsCommand command) noexcept
     return command == SettingsCommand::wifi_radio_sync || command == SettingsCommand::wifi_sync ||
            command == SettingsCommand::wifi_profiles || command == SettingsCommand::wifi_profile ||
            command == SettingsCommand::wifi_details || command == SettingsCommand::wifi_details_profile ||
-           command == SettingsCommand::bluetooth_info || command == SettingsCommand::bluetooth_sync ||
+           command == SettingsCommand::bluetooth_dbus_devices || command == SettingsCommand::bluetooth_paired_devices ||
+           command == SettingsCommand::bluetooth_info ||
+           command == SettingsCommand::bluetooth_sync ||
            command == SettingsCommand::ethernet_refresh;
 }
 

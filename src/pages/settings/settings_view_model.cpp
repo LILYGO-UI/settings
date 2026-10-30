@@ -76,8 +76,11 @@ void SettingsViewModel::poll_command()
             break;
         case SettingsCommand::bluetooth_scan:
         case SettingsCommand::bluetooth_devices:
+        case SettingsCommand::bluetooth_paired_devices:
+        case SettingsCommand::bluetooth_dbus_devices:
         case SettingsCommand::bluetooth_info:
         case SettingsCommand::bluetooth_sync:
+        case SettingsCommand::bluetooth_pair:
         case SettingsCommand::bluetooth_connect:
         case SettingsCommand::bluetooth_power:
             bluetooth_.command_finished(*result);
@@ -110,22 +113,19 @@ void SettingsViewModel::poll_command()
     publish_command_state_if_changed();
 
     if (commands_.busy()) return;
-    if (bluetooth_.resume_pending_scan()) {
-        bluetooth_sync_pending_ = false;
-        return;
-    }
     if (wifi_radio_sync_pending_ || wifi_sync_pending_ || bluetooth_sync_pending_) {
         start_next_background_command();
         if (commands_.busy()) return;
     }
+    if (refresh_pending_) {
+        refresh();
+        return;
+    }
+    if (bluetooth_.resume_pending_scan()) return;
     if (wifi_.resume_background()) return;
     if (ethernet_sync_pending_) {
         ethernet_sync_pending_ = false;
         if (ethernet_.sync()) return;
-    }
-    if (refresh_pending_) {
-        refresh();
-        return;
     }
 }
 

@@ -1,5 +1,7 @@
 #include "pages/bluetooth/bluetooth_view_model.hpp"
 
+#include "domain/settings_platform.hpp"
+
 #include <chrono>
 #include <string_view>
 
@@ -17,6 +19,13 @@ bool reports_unavailable_service(std::string_view output)
 {
     return output.find("BlueZ service unavailable") != std::string_view::npos ||
            output.find("Failed to connect to bluetoothd") != std::string_view::npos;
+}
+
+bool is_scan_command(SettingsCommand command)
+{
+    return command == SettingsCommand::bluetooth_scan || command == SettingsCommand::bluetooth_devices ||
+           command == SettingsCommand::bluetooth_paired_devices || command == SettingsCommand::bluetooth_dbus_devices ||
+           command == SettingsCommand::bluetooth_info;
 }
 
 }  // namespace
@@ -54,6 +63,11 @@ bool BluetoothViewModel::resume_pending_scan()
         publish();
         return false;
     }
+    if (model_.bluetooth_on() && model_.bluetooth_uses_service_backend()) {
+        scan_pending_ = false;
+        scan();
+        return commands_.busy();
+    }
     if (sync_controller()) return true;
     scan_pending_    = false;
     status_override_ = "Cannot Start Operation";
@@ -63,26 +77,54 @@ bool BluetoothViewModel::resume_pending_scan()
 
 void BluetoothViewModel::cancel_pending_scan() noexcept
 {
-    scan_pending_ = false;
+    scan_pending_    = false;
+    continuous_scan_ = false;
+    pending_pair_address_.clear();
     clear_pending_device_info();
+}
+
+void BluetoothViewModel::start_continuous_scan()
+{
+    continuous_scan_ = true;
+    if (commands_.busy()) {
+        scan_pending_    = true;
+        status_override_ = "Preparing Bluetooth...";
+        publish();
+        return;
+    }
+    scan();
+}
+
+void BluetoothViewModel::stop_continuous_scan() noexcept
+{
+    continuous_scan_ = false;
+    scan_pending_    = false;
+    clear_pending_device_info();
+    if (commands_.busy() && is_scan_command(commands_.active_command()))
+        commands_.stop();
 }
 
 void BluetoothViewModel::refresh()
 {
     status_override_.clear();
+    if (continuous_scan_) scan_pending_ = true;
     publish();
 }
 
 void BluetoothViewModel::scan()
 {
-    if (!model_.bluetooth_on()) {
-        if (commands_.busy() && settings_command_is_background(commands_.active_command()) &&
-            model_.bluetoothctl_available()) {
+    if (commands_.busy()) {
+        if (settings_command_is_background(commands_.active_command())) {
             scan_pending_    = true;
             status_override_ = "Preparing Bluetooth...";
             publish();
             return;
         }
+        status_override_ = "Another Operation Is In Progress";
+        publish();
+        return;
+    }
+    if (!model_.bluetooth_on()) {
         status_override_ = "Bluetooth Is Off";
         publish();
         return;
@@ -139,8 +181,21 @@ void BluetoothViewModel::connect(std::size_t index)
         return;
     }
     const auto &device = model_.bluetooth_devices()[index];
-    (void)start(SettingsCommand::bluetooth_connect,
-                {model_.environment().bluetoothctl, "--timeout", "15", "connect", device.address}, "Connecting...");
+    if (commands_.busy() && is_scan_command(commands_.active_command())) {
+        commands_.stop();
+        clear_pending_device_info();
+    }
+    scan_pending_ = continuous_scan_;
+    if (device.paired) {
+        (void)start(SettingsCommand::bluetooth_connect,
+                    {model_.environment().bluetoothctl, "--timeout", "15", "connect", device.address},
+                    "Connecting...");
+    } else {
+        pending_pair_address_ = device.address;
+        if (!start(SettingsCommand::bluetooth_pair,
+                   {model_.environment().bluetoothctl, "--timeout", "30", "pair", device.address}, "Pairing..."))
+            pending_pair_address_.clear();
+    }
 }
 
 void BluetoothViewModel::command_finished(const SettingsCommandResult &result)
@@ -148,31 +203,52 @@ void BluetoothViewModel::command_finished(const SettingsCommandResult &result)
     switch (result.command) {
         case SettingsCommand::bluetooth_scan:
             if (result.success) {
-                (void)start(SettingsCommand::bluetooth_devices, {model_.environment().bluetoothctl, "devices"},
-                            "Loading Devices...");
+                // Some BlueZ versions report the friendly name in the scan
+                // event but omit it from the subsequent `devices` listing.
+                // Keep that name cached so the second command cannot erase it.
+                (void)model_.update_bluetooth_devices(result.output);
+                (void)start_device_listing();
             } else {
                 status_override_ = "Bluetooth Search Failed";
                 publish();
+                request_next_scan();
             }
             break;
         case SettingsCommand::bluetooth_devices:
+        case SettingsCommand::bluetooth_dbus_devices:
+            if (result.command == SettingsCommand::bluetooth_dbus_devices && !result.success) {
+                // Keep a graceful fallback for systems where the helper or
+                // system bus is unavailable. The application still supports
+                // the legacy bluetoothctl listing in that case.
+                (void)start(SettingsCommand::bluetooth_devices,
+                            {model_.environment().bluetoothctl, "devices"}, "Loading Devices...");
+                break;
+            }
             if (!result.success)
                 status_override_ = "Bluetooth Search Failed";
-            else if (!has_output(result.output)) {
+            else if (!has_output(result.output) && result.command == SettingsCommand::bluetooth_dbus_devices)
                 model_.clear_bluetooth_devices();
-                status_override_ = "No Devices Found";
-            } else if (!model_.update_bluetooth_devices(result.output)) {
+            else if (has_output(result.output) && !model_.update_bluetooth_devices(result.output)) {
                 status_override_ = "Bluetooth Search Failed";
-            } else {
-                pending_info_addresses_.clear();
-                pending_info_index_ = 0;
-                for (const auto &device : model_.bluetooth_devices()) {
-                    if (device.name.empty()) pending_info_addresses_.push_back(device.address);
-                }
-                if (!pending_info_addresses_.empty() && start_next_device_info()) return;
-                status_override_ = "Devices Updated";
+            } else if (result.command == SettingsCommand::bluetooth_devices) {
+                if (continuous_scan_ && start_paired_device_listing()) return;
+                if (!has_output(result.output)) model_.clear_bluetooth_devices();
             }
-            publish();
+            if (result.command == SettingsCommand::bluetooth_devices && !result.success) {
+                request_next_scan();
+                publish();
+                break;
+            }
+            finish_device_listing();
+            break;
+        case SettingsCommand::bluetooth_paired_devices:
+            if (result.success && has_output(result.output)) {
+                if (!model_.update_bluetooth_paired_devices(result.output))
+                    status_override_ = "Bluetooth Search Failed";
+            } else if (!result.success && model_.bluetooth_devices().empty()) {
+                status_override_ = "Bluetooth Search Failed";
+            }
+            finish_device_listing();
             break;
         case SettingsCommand::bluetooth_info:
             if (pending_info_index_ < pending_info_addresses_.size()) {
@@ -184,10 +260,11 @@ void BluetoothViewModel::command_finished(const SettingsCommandResult &result)
             clear_pending_device_info();
             status_override_ = "Devices Updated";
             publish();
+            request_next_scan();
             break;
         case SettingsCommand::bluetooth_sync: {
-            const bool scan_after_sync = scan_pending_;
-            scan_pending_              = false;
+            const bool scan_after_sync = scan_pending_ || continuous_scan_;
+            scan_pending_              = scan_after_sync;
             status_override_.clear();
             if (result.success) {
                 if (!model_.update_bluetooth_controller(result.output)) {
@@ -204,11 +281,20 @@ void BluetoothViewModel::command_finished(const SettingsCommandResult &result)
             }
             model_.refresh_connectivity();
             publish();
-            if (scan_after_sync && model_.bluetooth_on() && model_.bluetooth_uses_service_backend()) scan();
             break;
         }
         case SettingsCommand::bluetooth_connect:
             status_override_ = result.success ? "Connected" : "Connection Failed";
+            publish();
+            break;
+        case SettingsCommand::bluetooth_pair:
+            if (result.success && !pending_pair_address_.empty()) {
+                (void)model_.mark_bluetooth_device_paired(pending_pair_address_);
+                status_override_ = "Paired";
+            } else {
+                status_override_ = "Pairing Failed";
+            }
+            pending_pair_address_.clear();
             publish();
             break;
         case SettingsCommand::bluetooth_power:
@@ -266,6 +352,44 @@ bool BluetoothViewModel::start_next_device_info()
     return start(SettingsCommand::bluetooth_info,
                  {model_.environment().bluetoothctl, "info", pending_info_addresses_[pending_info_index_]},
                  "Loading Device Names...", background_command_timeout);
+}
+
+void BluetoothViewModel::finish_device_listing()
+{
+    pending_info_addresses_.clear();
+    pending_info_index_ = 0;
+    for (const auto &device : model_.bluetooth_devices()) {
+        if (device.name.empty()) pending_info_addresses_.push_back(device.address);
+    }
+    if (!pending_info_addresses_.empty() && start_next_device_info()) return;
+    if (model_.bluetooth_devices().empty())
+        status_override_ = "No Devices Found";
+    else if (status_override_ != "Bluetooth Search Failed")
+        status_override_ = "Devices Updated";
+    publish();
+    request_next_scan();
+}
+
+void BluetoothViewModel::request_next_scan()
+{
+    if (!continuous_scan_ || !model_.bluetooth_on() || !model_.bluetooth_uses_service_backend()) return;
+    scan_pending_ = true;
+}
+
+bool BluetoothViewModel::start_paired_device_listing()
+{
+    const auto &environment = model_.environment();
+    return start(SettingsCommand::bluetooth_paired_devices,
+                 {environment.bluetoothctl, "paired-devices"}, "Loading My Devices...");
+}
+
+bool BluetoothViewModel::start_device_listing()
+{
+    const auto &environment = model_.environment();
+    if (platform::settings_command_available(environment.bluetooth_dbus_helper.c_str()))
+        return start(SettingsCommand::bluetooth_dbus_devices, {environment.bluetooth_dbus_helper},
+                     "Loading Devices...");
+    return start(SettingsCommand::bluetooth_devices, {environment.bluetoothctl, "devices"}, "Loading Devices...");
 }
 
 void BluetoothViewModel::clear_pending_device_info() noexcept

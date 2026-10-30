@@ -45,8 +45,8 @@ lv_obj_t *HomeView::create(lv_obj_t *parent)
                                                              true, true, "settings_home_bluetooth_row");
     const auto ethernet  = components::create_image_menu_row(connectivity_, &assets::ethernet_icon, "Ethernet",
                                                              "Connected", true, true, "settings_home_ethernet_row");
-    const auto cellular = components::create_menu_row(connectivity_, LV_SYMBOL_CALL, "Cellular", "Checking...", true,
-                                                       true, "settings_home_cellular_row");
+    const auto cellular = components::create_image_menu_row(connectivity_, &assets::cellular_icon, "Cellular", "Checking...",
+                                                             true, true, "settings_home_cellular_row");
     const auto battery = components::create_image_menu_row(connectivity_, &assets::battery_icon, "Battery", "82%", false,
                                                            true, "settings_home_battery_row");
     for (lv_obj_t *row : {wifi.root, bluetooth.root, ethernet.root, cellular.root, battery.root}) lv_obj_set_height(row, 64);

@@ -58,6 +58,8 @@ typedef struct settings_wifi_network_list {
 typedef struct settings_bluetooth_device {
     char address[SETTINGS_NAME_MAX];
     char name[SETTINGS_VALUE_MAX];
+    bool paired;
+    bool paired_known;
 } settings_bluetooth_device_t;
 
 typedef struct settings_bluetooth_device_list {

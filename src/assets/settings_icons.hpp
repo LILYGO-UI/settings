@@ -8,6 +8,7 @@ namespace lilygo::settings::assets {
 extern const lv_image_dsc_t wifi_icon;
 extern const lv_image_dsc_t bluetooth_icon;
 extern const lv_image_dsc_t ethernet_icon;
+extern const lv_image_dsc_t cellular_icon;
 extern const lv_image_dsc_t battery_icon;
 extern const lv_image_dsc_t general_icon;
 

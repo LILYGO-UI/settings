@@ -2,6 +2,7 @@
 
 #include "assets/settings_icon_battery.inc"
 #include "assets/settings_icon_bluetooth.inc"
+#include "assets/settings_icon_cellular.inc"
 #include "assets/settings_icon_ethernet.inc"
 #include "assets/settings_icon_general.inc"
 #include "assets/settings_icon_wifi.inc"
@@ -28,6 +29,7 @@ lv_image_dsc_t png_icon(const unsigned char *data, std::uint32_t size)
 const lv_image_dsc_t wifi_icon      = png_icon(settings_icon_wifi_png, sizeof(settings_icon_wifi_png));
 const lv_image_dsc_t bluetooth_icon = png_icon(settings_icon_bluetooth_png, sizeof(settings_icon_bluetooth_png));
 const lv_image_dsc_t ethernet_icon  = png_icon(settings_icon_ethernet_png, sizeof(settings_icon_ethernet_png));
+const lv_image_dsc_t cellular_icon  = png_icon(settings_icon_cellular_png, sizeof(settings_icon_cellular_png));
 const lv_image_dsc_t battery_icon   = png_icon(settings_icon_battery_png, sizeof(settings_icon_battery_png));
 const lv_image_dsc_t general_icon   = png_icon(settings_icon_general_png, sizeof(settings_icon_general_png));
 

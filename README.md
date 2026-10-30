@@ -141,8 +141,9 @@ The package is generated as
 `/usr/bin/lilygo-ui-settings`, the launcher manifest to
 `/usr/share/launcher/apps/cc.lilygo.ui.Settings.json`, and its launcher icon to
 `/usr/share/icons/hicolor/128x128/apps/cc.lilygo.ui.Settings.png`. It also
-installs `cc.lilygo.ui.Settings.desktop`, AppStream metadata, and AppKit font
-license notices.
+installs the BlueZ D-Bus helper under `/usr/libexec`,
+`cc.lilygo.ui.Settings.desktop`, AppStream metadata, and AppKit font license
+notices.
 
 The package intentionally provides, conflicts with, and replaces the published
 `lilygo-cm0-settings` package so Debian upgrades remove the old identity. These
@@ -219,7 +220,10 @@ release renderer.
   `sudo -n`; the package installs a narrow `/etc/sudoers.d` policy for the two
   fixed `nmcli` operations. If the policy is absent or authorization fails,
   the page reports the save failure without prompting for or storing a password.
-- Bluetooth uses `/sys/class/rfkill` and BlueZ's `bluetoothctl`.
+- Bluetooth uses `/sys/class/rfkill` and BlueZ's `bluetoothctl` for radio and
+  discovery control. Device enumeration and friendly names use the packaged
+  `org.bluez.Device1` D-Bus helper; devices without a published `Name` or
+  `Alias` remain identifiable by their MAC address.
 - Battery identifies the BQ27220 fuel gauge and BQ25890 charger separately through
   `/sys/class/power_supply`. It shows charge percentage, battery health, remaining,
   full and design capacities, cycle count, voltage, current and temperature.
@@ -320,4 +324,5 @@ The UI remains usable when hardware or an optional service is absent and shows
 an explicit unavailable state. Platform images and tests can override paths
 with `CM0_NETWORK_DIR`, `CM0_RFKILL_DIR`, `CM0_POWER_SUPPLY_DIR`, `CM0_NMCLI`,
 `CM0_BLUETOOTHCTL`, `CM0_OS_RELEASE_FILE`, `CM0_DEVICE_MODEL_FILE`,
-`CM0_DEVICE_SERIAL_FILE`, `CM0_MEMINFO_FILE`, and `CM0_STORAGE_PATH`.
+`CM0_DEVICE_SERIAL_FILE`, `CM0_MEMINFO_FILE`, `CM0_STORAGE_PATH`, and
+`LILYGO_UI_BLUETOOTH_DBUS_HELPER`.

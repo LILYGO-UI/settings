@@ -22,14 +22,15 @@ private:
     static void device_clicked(lv_event_t *event);
     void render() noexcept;
     void rebuild_devices();
-    void create_empty_row(const char *message);
-    void set_group_height(std::size_t rows) noexcept;
+    void create_empty_row(lv_obj_t *group, const char *message);
+    void rebuild_group(lv_obj_t *group, bool paired);
 
     BluetoothViewModel &view_model_;
     lv_obj_t *root_                  = nullptr;
     lv_obj_t *switch_                = nullptr;
     lv_obj_t *status_                = nullptr;
     lv_obj_t *device_group_          = nullptr;
+    lv_obj_t *other_device_group_    = nullptr;
     std::size_t rendered_generation_ = std::numeric_limits<std::size_t>::max();
     bool rendered_available_         = false;
     bool rendered_enabled_           = false;

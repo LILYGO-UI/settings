@@ -1,4 +1,5 @@
 #include "domain/settings_model.hpp"
+#include "domain/settings_platform.hpp"
 #include "pages/keyboard/keyboard_model.hpp"
 #include "pages/sharing/sharing_model.hpp"
 #include "pages/sharing/serial_console_model.hpp"
@@ -19,6 +20,8 @@ using lilygo::settings::KeyboardModel;
 using lilygo::settings::SettingsEnvironment;
 using lilygo::settings::SettingsModel;
 using lilygo::settings::WifiNetwork;
+using lilygo::settings::platform::settings_bluetooth_device_t;
+using lilygo::settings::platform::settings_bluetooth_parse_info;
 using lilygo::settings::test_support::SettingsFixture;
 
 std::string read_file(const std::string &path)
@@ -155,6 +158,13 @@ void test_parses_command_results_into_model_state()
     assert(model.bluetooth_devices()[0].address == "AA:BB:CC:DD:EE:01");
     assert(model.bluetooth_devices()[1].name == "Living Room Speaker");
 
+    SettingsModel paired_model(fixture.environment());
+    assert(paired_model.update_bluetooth_devices("Device AA:BB:CC:DD:EE:01 Keyboard\tPaired: yes\n"
+                                                  "Device AA:BB:CC:DD:EE:02 Speaker\tPaired: no\n"));
+    assert(paired_model.bluetooth_devices().size() == 2);
+    assert(paired_model.bluetooth_devices()[0].paired);
+    assert(!paired_model.bluetooth_devices()[1].paired);
+
     assert(model.update_bluetooth_devices("Device AA:BB:CC:DD:EE:09\n"));
     assert(model.bluetooth_devices().size() == 1);
     assert(model.bluetooth_devices()[0].name.empty());
@@ -174,6 +184,11 @@ void test_parses_command_results_into_model_state()
         "aa:bb:cc:dd:ee:05", "Device AA:BB:CC:DD:EE:05\n\tName: Living Room Speaker\n"));
     assert(unnamed_model.bluetooth_devices()[0].name == "Living Room Speaker");
 
+    assert(model.update_bluetooth_devices(
+        "\x1b[0;92m[NEW]\x1b[0m Device AA:BB:CC:DD:EE:10 Desk Headset\n"));
+    assert(model.bluetooth_devices().size() == 1);
+    assert(model.bluetooth_devices()[0].name == "Desk Headset");
+
     assert(
         model.update_bluetooth_controller("Controller AA:BB:CC:DD:EE:FF LILYGO [default]\n"
                                           "\tPowered: no\n"));
@@ -191,6 +206,34 @@ void test_parses_command_results_into_model_state()
     assert(model.bluetooth_devices().empty());
     assert(!model.update_wifi_networks(""));
     assert(!model.update_bluetooth_devices("invalid output"));
+}
+
+void test_parses_bluetooth_info_variants()
+{
+    settings_bluetooth_device_t device{};
+
+    assert(settings_bluetooth_parse_info("Device AA:BB:CC:DD:EE:01 (public)\r\n"
+                                         "\tName: Desk Headset\r\n"
+                                         "\tAlias: Desk Headset\r\n",
+                                         &device) == 0);
+    assert(std::string(device.address) == "AA:BB:CC:DD:EE:01");
+    assert(std::string(device.name) == "Desk Headset");
+
+    // Some bluetoothctl versions expose only Alias, while others report the
+    // name as an event line with a [CHG] prefix.
+    assert(settings_bluetooth_parse_info("[CHG] Device aa:bb:cc:dd:ee:02 Alias: Office Speaker\n",
+                                         &device) == 0);
+    assert(std::string(device.address) == "aa:bb:cc:dd:ee:02");
+    assert(std::string(device.name) == "Office Speaker");
+
+    assert(settings_bluetooth_parse_info("[NEW] Device AA:BB:CC:DD:EE:03\n"
+                                         "[CHG] Device AA:BB:CC:DD:EE:03 Name: Living Room Speaker\n",
+                                         &device) == 0);
+    assert(std::string(device.address) == "AA:BB:CC:DD:EE:03");
+    assert(std::string(device.name) == "Living Room Speaker");
+
+    settings_bluetooth_device_t incomplete{};
+    assert(settings_bluetooth_parse_info("[CHG] Device AA:BB:CC:DD:EE:04 RSSI: -61\n", &incomplete) == 1);
 }
 
 void test_power_change_rolls_back_without_rfkill()
@@ -344,6 +387,7 @@ void test_missing_platform_state_is_safe()
     SettingsEnvironment environment{
         "/not/a/network/root", "/not/a/rfkill/root", "/not/a/power/root",   "/not/an/os-release", "/not/a/model",
         "/not/a/serial",       "/not/a/meminfo",     "/not/a/storage/root", "/not/a/nmcli",       "/not/a/bluetoothctl",
+        "/not/a/sudo",         "/not/a/bluetooth-dbus",
     };
     SettingsModel model(environment);
     model.refresh_all();
@@ -517,6 +561,7 @@ int main()
     test_keyboard_feedback_is_safe_when_driver_is_missing();
     test_refreshes_domain_state();
     test_parses_command_results_into_model_state();
+    test_parses_bluetooth_info_variants();
     test_power_change_rolls_back_without_rfkill();
     test_network_manager_radio_failure_uses_observed_state();
     test_wifi_capacity_keeps_late_connected_network();

@@ -396,7 +396,7 @@ void test_bluetooth_commands_and_publication()
     assert(
         model.update_bluetooth_controller("Controller AA:BB:CC:DD:EE:FF LILYGO [default]\n"
                                           "\tPowered: yes\n"));
-    assert(model.update_bluetooth_devices("Device AA:BB:CC:DD:EE:01 Keyboard\n"));
+    assert(model.update_bluetooth_devices("Device AA:BB:CC:DD:EE:01 Keyboard\tPaired: yes\n"));
 
     SettingsCommandRunner runner;
     BluetoothViewModel bluetooth(model, runner);
@@ -410,6 +410,17 @@ void test_bluetooth_commands_and_publication()
     assert(bluetooth.presentation().status == "Connected");
     assert(lv_subject_get_int(bluetooth.revision_subject()) > revision);
     assert(fixture.command_log().find("connect AA:BB:CC:DD:EE:01") != std::string::npos);
+
+    assert(model.update_bluetooth_devices("Device AA:BB:CC:DD:EE:03 Gamepad\tPaired: no\n"));
+    bluetooth.connect(0);
+    assert(runner.busy());
+    result = wait_for_result(runner);
+    assert(result.command == SettingsCommand::bluetooth_pair);
+    bluetooth.command_finished(result);
+    assert(bluetooth.presentation().status == "Paired");
+    assert(bluetooth.devices().size() == 1);
+    assert(bluetooth.devices()[0].paired);
+    assert(fixture.command_log().find("pair AA:BB:CC:DD:EE:03") != std::string::npos);
 
     model.clear_bluetooth_devices();
     bluetooth.scan();
@@ -443,6 +454,56 @@ void test_bluetooth_commands_and_publication()
     assert(!bluetooth.presentation().enabled);
     assert(read_file(fixture.path("rfkill/rfkill1/soft")) == "0\n");
     assert(read_file(fixture.bluetooth_power_path()) == "no\n");
+}
+
+void test_bluetooth_scan_event_name_survives_devices_refresh()
+{
+    SettingsFixture fixture;
+    fixture.export_environment();
+    fixture.write("bluetooth-devices-output", "Device AA:BB:CC:DD:EE:09\n");
+
+    SettingsModel model(fixture.environment());
+    model.refresh_connectivity();
+    assert(model.update_network_manager_wifi_radio("enabled\n"));
+    assert(model.update_bluetooth_controller("Controller AA:BB:CC:DD:EE:FF LILYGO [default]\n"
+                                             "\tPowered: yes\n"));
+    SettingsCommandRunner runner;
+    BluetoothViewModel bluetooth(model, runner);
+    bluetooth.command_finished(
+        {SettingsCommand::bluetooth_scan, true, "[NEW] Device AA:BB:CC:DD:EE:09 Desk Headset\n"});
+    const auto result = wait_for_result(runner);
+    assert(result.command == SettingsCommand::bluetooth_devices);
+    bluetooth.command_finished(result);
+    assert(bluetooth.devices().size() == 1);
+    assert(bluetooth.devices()[0].name == "Desk Headset");
+}
+
+void test_bluetooth_scan_uses_dbus_helper_when_available()
+{
+    SettingsFixture fixture;
+    fixture.write("bluetooth-dbus", "#!/bin/sh\n"
+                                  "printf '%s\\n' \"$*\" >> \"$CM0_TEST_COMMAND_LOG\"\n"
+                                  "printf 'Device AA:BB:CC:DD:EE:09 D-Bus Headset\\n'\n",
+                  0700);
+    auto environment                 = fixture.environment();
+    environment.bluetooth_dbus_helper = fixture.path("bluetooth-dbus");
+    SettingsModel model(environment);
+    model.refresh_connectivity();
+    assert(model.update_network_manager_wifi_radio("enabled\n"));
+    assert(model.update_bluetooth_controller("Controller AA:BB:CC:DD:EE:FF LILYGO [default]\n"
+                                             "\tPowered: yes\n"));
+
+    SettingsCommandRunner runner;
+    BluetoothViewModel bluetooth(model, runner);
+    bluetooth.scan();
+    auto result = wait_for_result(runner);
+    assert(result.command == SettingsCommand::bluetooth_scan);
+    bluetooth.command_finished(result);
+    result = wait_for_result(runner);
+    assert(result.command == SettingsCommand::bluetooth_dbus_devices);
+    bluetooth.command_finished(result);
+    assert(bluetooth.devices().size() == 1);
+    assert(bluetooth.devices()[0].name == "D-Bus Headset");
 }
 
 void test_rfkill_fallback_is_a_single_power_path()
@@ -1114,6 +1175,8 @@ int main()
         test_known_wifi_details_and_forget_races();
         test_ethernet_save_preempts_wifi_background();
         test_bluetooth_commands_and_publication();
+        test_bluetooth_scan_event_name_survives_devices_refresh();
+        test_bluetooth_scan_uses_dbus_helper_when_available();
         test_rfkill_fallback_is_a_single_power_path();
         test_settings_view_model_dispatches_results();
         test_bluetooth_sync_honors_deferred_scan_and_rfkill_fallback();

@@ -50,7 +50,7 @@ public:
         return {
             path("net"),    path("rfkill"),  path("power"), path("os-release"), path("model"),
             path("serial"), path("meminfo"), path(),        path("nmcli"),      path("bluetoothctl"),
-            path("sudo"),
+            path("sudo"),    path("missing-bluetooth-dbus"),
         };
     }
 
@@ -69,6 +69,7 @@ public:
         set_environment("LILYGO_UI_CELLULAR_DEVICE", cellular_device_path());
         set_environment("LILYGO_UI_SYSTEMCTL", path("systemctl"));
         set_environment("LILYGO_UI_SUDO", path("sudo"));
+        set_environment("LILYGO_UI_BLUETOOTH_DBUS_HELPER", path("missing-bluetooth-dbus"));
         set_environment("LILYGO_UI_RASPI_CONFIG", path("raspi-config"));
         set_environment("LILYGO_UI_RUNNING_CMDLINE", path("running-cmdline"));
         set_environment("CM0_BLUETOOTHCTL", values.bluetoothctl);
@@ -387,8 +388,8 @@ esac
         write("cellular-operator", "China Mobile");
         write("bluetooth-powered", "yes\n");
         write("bluetooth-devices-output",
-              "Device AA:BB:CC:DD:EE:01 Keyboard\n"
-              "Device AA:BB:CC:DD:EE:02 Studio Speaker\n");
+              "Device AA:BB:CC:DD:EE:01 Keyboard\tPaired: yes\n"
+              "Device AA:BB:CC:DD:EE:02 Studio Speaker\tPaired: yes\n");
         write("ethernet-profile", "Wired connection 1\n");
         write("ethernet-modify", "");
         write("ethernet-up", "");
@@ -501,6 +502,8 @@ esac
               "    fi\n"
               "    cat \"$CM0_TEST_BLUETOOTH_DEVICES_OUTPUT\"\n"
               "    ;;\n"
+              "  paired-devices) cat \"$CM0_TEST_BLUETOOTH_DEVICES_OUTPUT\" ;;\n"
+              "  *'pair '*) printf 'Pairing successful\\n' ;;\n"
               "  *'power off'*) printf 'no\\n' > \"$CM0_TEST_BLUETOOTH_POWER\" ;;\n"
               "  *'power on'*) printf 'yes\\n' > \"$CM0_TEST_BLUETOOTH_POWER\" ;;\n"
               "esac\n",

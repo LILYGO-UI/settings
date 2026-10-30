@@ -26,6 +26,7 @@ struct SettingsEnvironment {
     // Optional privilege helper used for NetworkManager profile writes.  Test
     // environments may leave this empty to run their command shim directly.
     std::string sudo;
+    std::string bluetooth_dbus_helper;
 
     static SettingsEnvironment from_process_environment();
 };
@@ -57,6 +58,7 @@ struct WifiNetwork {
 struct BluetoothDevice {
     std::string address;
     std::string name;
+    bool paired = false;
 };
 
 struct AboutState {
@@ -91,6 +93,8 @@ public:
     void mark_network_manager_wifi_radio_refresh_failed() noexcept;
     [[nodiscard]] bool update_wifi_networks(std::string_view output);
     [[nodiscard]] bool update_bluetooth_devices(std::string_view output);
+    [[nodiscard]] bool update_bluetooth_paired_devices(std::string_view output);
+    [[nodiscard]] bool mark_bluetooth_device_paired(std::string_view address);
     [[nodiscard]] bool update_bluetooth_device_name(std::string_view address, std::string_view output);
     [[nodiscard]] bool update_bluetooth_controller(std::string_view output);
     void mark_bluetooth_controller_unavailable() noexcept;

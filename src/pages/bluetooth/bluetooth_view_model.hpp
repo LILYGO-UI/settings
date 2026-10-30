@@ -29,6 +29,8 @@ public:
     [[nodiscard]] bool sync_controller();
     [[nodiscard]] bool resume_pending_scan();
     void cancel_pending_scan() noexcept;
+    void start_continuous_scan();
+    void stop_continuous_scan() noexcept;
     void scan();
     void set_enabled(bool enabled);
     void connect(std::size_t index);
@@ -41,7 +43,11 @@ public:
 private:
     [[nodiscard]] bool start(SettingsCommand command, std::vector<std::string> arguments, const char *progress,
                              std::chrono::milliseconds timeout = std::chrono::seconds(30));
+    [[nodiscard]] bool start_device_listing();
+    [[nodiscard]] bool start_paired_device_listing();
     [[nodiscard]] bool start_next_device_info();
+    void finish_device_listing();
+    void request_next_scan();
     void clear_pending_device_info() noexcept;
     void update_list_generation() noexcept;
     [[nodiscard]] std::string derived_status() const;
@@ -51,6 +57,8 @@ private:
     BluetoothPresentation presentation_;
     std::string status_override_;
     bool scan_pending_                     = false;
+    bool continuous_scan_                  = false;
+    std::string pending_pair_address_;
     std::vector<std::string> pending_info_addresses_;
     std::size_t pending_info_index_         = 0;
     std::size_t list_generation_           = 0;

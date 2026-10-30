@@ -34,6 +34,23 @@ static void trim(char *text)
     if (first) memmove(text, text + first, strlen(text + first) + 1U);
 }
 
+static void strip_ansi(char *text)
+{
+    if (!text) return;
+    char *read = text;
+    char *write = text;
+    while (*read) {
+        if (read[0] == '\x1b' && read[1] == '[') {
+            read += 2;
+            while (*read && !((*read >= '@' && *read <= 'Z') || (*read >= 'a' && *read <= 'z'))) ++read;
+            if (*read) ++read;
+            continue;
+        }
+        *write++ = *read++;
+    }
+    *write = '\0';
+}
+
 static bool read_text_file(const char *path, char *text, size_t text_size)
 {
     if (!path || !text || text_size == 0) return false;
@@ -322,6 +339,7 @@ int settings_bluetooth_parse_devices(const char *output, settings_bluetooth_devi
         if (length >= sizeof(line)) length = sizeof(line) - 1U;
         memcpy(line, cursor, length);
         line[length] = '\0';
+        strip_ansi(line);
         trim(line);
         const char *device_start = NULL;
         bool direct_device       = false;
@@ -347,9 +365,31 @@ int settings_bluetooth_parse_devices(const char *output, settings_bluetooth_devi
                 snprintf(details_copy, sizeof(details_copy), "%s", details);
                 trim(details_copy);
 
+                bool paired_known = false;
+                bool paired       = false;
+                char *paired_field = strstr(details_copy, "\tPaired:");
+                if (!paired_field) paired_field = strstr(details_copy, " Paired:");
+                if (!paired_field && strncmp(details_copy, "Paired:", 7) == 0) paired_field = details_copy;
+                if (paired_field) {
+                    const bool at_start     = paired_field == details_copy;
+                    const char *paired_value = nullptr;
+                    if (at_start) {
+                        details_copy[0] = '\0';
+                        paired_value    = details_copy + 7;
+                    } else {
+                        *paired_field = '\0';
+                        paired_value = paired_field + 8;
+                    }
+                    while (*paired_value == ' ' || *paired_value == '\t') ++paired_value;
+                    paired_known = true;
+                    paired = strncmp(paired_value, "yes", 3) == 0 || strncmp(paired_value, "true", 4) == 0 ||
+                             *paired_value == '1';
+                }
+
                 const char *name = NULL;
                 if (direct_device) {
-                    name = details_copy;
+                    if (strncmp(details_copy, "RSSI:", 5) != 0 && strncmp(details_copy, "TxPower:", 8) != 0)
+                        name = details_copy;
                 } else if (strncmp(details_copy, "Name:", 5) == 0) {
                     name_change = true;
                     name        = details_copy + 5;
@@ -374,6 +414,10 @@ int settings_bluetooth_parse_devices(const char *output, settings_bluetooth_devi
                     }
                     if (index < devices->count && name && *name)
                         snprintf(devices->items[index].name, sizeof(devices->items[index].name), "%s", name);
+                    if (index < devices->count && paired_known) {
+                        devices->items[index].paired       = paired;
+                        devices->items[index].paired_known = true;
+                    }
                 }
             }
         }
@@ -387,8 +431,9 @@ int settings_bluetooth_parse_info(const char *output, settings_bluetooth_device_
     if (!output || !device) return SETTINGS_BACKEND_ERROR;
     memset(device, 0, sizeof(*device));
     const char *cursor = output;
-    bool address_found = false;
-    bool name_found    = false;
+    bool address_found        = false;
+    bool name_found           = false;
+    bool canonical_name_found = false;
     while (*cursor) {
         const char *end = strchr(cursor, '\n');
         size_t length   = end ? (size_t)(end - cursor) : strlen(cursor);
@@ -396,24 +441,52 @@ int settings_bluetooth_parse_info(const char *output, settings_bluetooth_device_
         if (length >= sizeof(line)) length = sizeof(line) - 1U;
         memcpy(line, cursor, length);
         line[length] = '\0';
+        strip_ansi(line);
         trim(line);
-        if (strncmp(line, "Device ", 7) == 0) {
-            const char *address = line + 7;
+        const char *device_line = NULL;
+        if (strncmp(line, "Device ", 7) == 0)
+            device_line = line;
+        else if (strncmp(line, "[NEW] Device ", 13) == 0 || strncmp(line, "[CHG] Device ", 13) == 0)
+            device_line = line + 6;  // Strip the event prefix, retaining "Device ...".
+
+        const char *field_value = NULL;
+        bool canonical_field    = false;
+        if (device_line) {
+            const char *address = device_line + 7;
             if (strlen(address) >= 17U) {
                 char parsed[SETTINGS_NAME_MAX] = {};
                 memcpy(parsed, address, 17U);
                 parsed[17] = '\0';
                 if (is_bluetooth_address(parsed)) {
                     snprintf(device->address, sizeof(device->address), "%s", parsed);
-                    address_found = true;
+                    address_found       = true;
+                    const char *details = address + 17U;
+                    while (*details == ' ' || *details == '\t') ++details;
+                    if (strncmp(details, "Name:", 5) == 0) {
+                        field_value     = details + 5;
+                        canonical_field = true;
+                    } else if (strncmp(details, "Alias:", 6) == 0) {
+                        field_value = details + 6;
+                    }
                 }
             }
-        } else if (strncmp(line, "Name:", 5) == 0 || strncmp(line, "Alias:", 6) == 0) {
-            const char *name = line + (line[0] == 'N' ? 5 : 6);
-            while (*name == ' ' || *name == '\t') ++name;
-            if (*name) {
-                snprintf(device->name, sizeof(device->name), "%s", name);
+        }
+        if (!field_value && (strncmp(line, "Name:", 5) == 0 || strncmp(line, "Alias:", 6) == 0)) {
+            field_value     = line + (line[0] == 'N' ? 5 : 6);
+            canonical_field = line[0] == 'N';
+        }
+        if (strncmp(line, "Paired:", 7) == 0) {
+            const char *value = line + 7;
+            while (*value == ' ' || *value == '\t') ++value;
+            device->paired       = strncmp(value, "yes", 3) == 0 || strncmp(value, "true", 4) == 0 || *value == '1';
+            device->paired_known = true;
+        }
+        if (field_value) {
+            while (*field_value == ' ' || *field_value == '\t') ++field_value;
+            if (*field_value && (!canonical_name_found || canonical_field)) {
+                snprintf(device->name, sizeof(device->name), "%s", field_value);
                 name_found = true;
+                if (canonical_field) canonical_name_found = true;
             }
         }
         cursor = end ? end + 1 : cursor + strlen(cursor);

@@ -49,7 +49,9 @@ bool same_bluetooth_devices(const std::vector<BluetoothDevice> &left, const std:
 {
     if (left.size() != right.size()) return false;
     for (std::size_t index = 0; index < left.size(); ++index) {
-        if (left[index].address != right[index].address || left[index].name != right[index].name) return false;
+        if (left[index].address != right[index].address || left[index].name != right[index].name ||
+            left[index].paired != right[index].paired)
+            return false;
     }
     return true;
 }
@@ -65,6 +67,24 @@ bool same_bluetooth_address(std::string_view left, std::string_view right)
     return true;
 }
 
+bool looks_like_bluetooth_address(std::string_view value)
+{
+    if (value.size() == 12U) {
+        return std::all_of(value.begin(), value.end(), [](char character) {
+            return std::isxdigit(static_cast<unsigned char>(character)) != 0;
+        });
+    }
+    if (value.size() != 17U) return false;
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if ((index + 1U) % 3U == 0U) {
+            if (value[index] != ':' && value[index] != '-') return false;
+        } else if (!std::isxdigit(static_cast<unsigned char>(value[index]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string normalized_value(std::string_view value)
 {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -74,6 +94,16 @@ std::string normalized_value(std::string_view value)
     std::transform(result.begin(), result.end(), result.begin(),
                    [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return result;
+}
+
+bool bluetooth_name_is_usable(std::string_view name, std::string_view address)
+{
+    const auto normalized_name = normalized_value(name);
+    if (normalized_name.empty() || same_bluetooth_address(normalized_name, address) ||
+        looks_like_bluetooth_address(normalized_name))
+        return false;
+    return normalized_name != "unknown" && normalized_name != "unknown device" && normalized_name != "(unknown)" &&
+           normalized_name != "n/a" && normalized_name != "--";
 }
 
 }  // namespace
@@ -92,6 +122,7 @@ SettingsEnvironment SettingsEnvironment::from_process_environment()
         environment_value("CM0_NMCLI", "/usr/bin/nmcli"),
         environment_value("CM0_BLUETOOTHCTL", "bluetoothctl"),
         environment_value("LILYGO_UI_SUDO", "/usr/bin/sudo"),
+        environment_value("LILYGO_UI_BLUETOOTH_DBUS_HELPER", "/usr/libexec/lilygo-ui-settings-bluetooth"),
     };
 }
 
@@ -320,13 +351,78 @@ bool SettingsModel::update_bluetooth_devices(std::string_view output)
     std::vector<BluetoothDevice> devices;
     devices.reserve(parsed.count);
     for (std::size_t index = 0; index < parsed.count; ++index) {
-        devices.push_back({parsed.items[index].address, parsed.items[index].name});
+        std::string name = parsed.items[index].name;
+        if (!bluetooth_name_is_usable(name, parsed.items[index].address)) {
+            name.clear();
+            const auto cached = std::find_if(bluetooth_devices_.begin(), bluetooth_devices_.end(),
+                                             [&parsed, index](const BluetoothDevice &device) {
+                                                 return same_bluetooth_address(device.address, parsed.items[index].address) &&
+                                                        bluetooth_name_is_usable(device.name, device.address);
+                                             });
+            if (cached != bluetooth_devices_.end()) name = cached->name;
+        }
+        bool paired = parsed.items[index].paired;
+        if (!parsed.items[index].paired_known) {
+            const auto cached = std::find_if(bluetooth_devices_.begin(), bluetooth_devices_.end(),
+                                             [&parsed, index](const BluetoothDevice &device) {
+                                                 return same_bluetooth_address(device.address, parsed.items[index].address);
+                                             });
+            if (cached != bluetooth_devices_.end()) paired = cached->paired;
+        }
+        devices.push_back({parsed.items[index].address, std::move(name), paired});
     }
     if (!same_bluetooth_devices(bluetooth_devices_, devices)) {
         bluetooth_devices_ = std::move(devices);
         ++bluetooth_device_generation_;
     }
     return true;
+}
+
+bool SettingsModel::update_bluetooth_paired_devices(std::string_view output)
+{
+    platform::settings_bluetooth_device_list_t parsed{};
+    const std::string text(output);
+    if (platform::settings_bluetooth_parse_devices(text.c_str(), &parsed) != platform::SETTINGS_BACKEND_OK)
+        return false;
+
+    bool changed = false;
+    for (std::size_t index = 0; index < parsed.count; ++index) {
+        const auto &item = parsed.items[index];
+        auto current = std::find_if(bluetooth_devices_.begin(), bluetooth_devices_.end(),
+                                    [&item](const BluetoothDevice &device) {
+                                        return same_bluetooth_address(device.address, item.address);
+                                    });
+        if (current == bluetooth_devices_.end()) {
+            std::string name = item.name;
+            if (!bluetooth_name_is_usable(name, item.address)) name.clear();
+            bluetooth_devices_.push_back({item.address, std::move(name), true});
+            changed = true;
+            continue;
+        }
+        if (!current->paired) {
+            current->paired = true;
+            changed         = true;
+        }
+        if (current->name.empty() && bluetooth_name_is_usable(item.name, item.address)) {
+            current->name = item.name;
+            changed        = true;
+        }
+    }
+    if (changed) ++bluetooth_device_generation_;
+    return true;
+}
+
+bool SettingsModel::mark_bluetooth_device_paired(std::string_view address)
+{
+    for (auto &device : bluetooth_devices_) {
+        if (!same_bluetooth_address(device.address, address)) continue;
+        if (!device.paired) {
+            device.paired = true;
+            ++bluetooth_device_generation_;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool SettingsModel::update_bluetooth_device_name(std::string_view address, std::string_view output)
@@ -338,10 +434,16 @@ bool SettingsModel::update_bluetooth_device_name(std::string_view address, std::
     if (!same_bluetooth_address(parsed.address, address)) return false;
     for (auto &device : bluetooth_devices_) {
         if (same_bluetooth_address(device.address, parsed.address)) {
+            bool changed = false;
             if (device.name != parsed.name) {
                 device.name = parsed.name;
-                ++bluetooth_device_generation_;
+                changed     = true;
             }
+            if (parsed.paired_known && device.paired != parsed.paired) {
+                device.paired = parsed.paired;
+                changed       = true;
+            }
+            if (changed) ++bluetooth_device_generation_;
             return true;
         }
     }
