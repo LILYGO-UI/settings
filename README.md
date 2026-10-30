@@ -1,134 +1,205 @@
 # LILYGO UI Settings
 
-`lilygo-ui-settings` is the standalone Settings application for LILYGO Linux
-products. It uses the application ID `cc.lilygo.ui.Settings` and follows the
-Settings layout: Wi-Fi, Bluetooth, Ethernet, Cellular, and Battery share one group;
-General is a separate group, with Keyboard vibration controls and the About
-page available from Settings.
+**English** | [简体中文](README.zh-CN.md)
 
-The project builds independently from the launcher. It consumes LILYGO UI
-AppKit through its source SDK CMake package and does not use launcher sources.
+LILYGO UI Settings is the system Settings application for LILYGO UI devices.
+Built with C++17, [LILYGO UI AppKit](https://github.com/LILYGO-UI/cm0-appkit),
+and LVGL 9.5, it configures networking, cellular radio and SIM status,
+Bluetooth, battery and charging limits, keyboard vibration, SSH remote login,
+serial console settings, and device information.
 
-## UI architecture
+The project provides a CM0 ARM64 Linux build and an SDL2 desktop simulator. It
+is a standalone top-level CMake project: the launcher is a runtime integration,
+while the platform SDK is consumed through `find_package(LilyGoUI CONFIG REQUIRED)`.
 
-The application uses a C++17 Model/ViewModel/View split. Shared platform state
-and rules live in `src/domain/`, each page keeps its ViewModel and View in
-`src/pages/<page>/`, and `src/app.cpp` plus `src/app_router.cpp` own lifecycle
-and navigation. Each page View creates and owns its responsive LVGL object tree
-under the parent supplied by its caller, then binds that tree to observable
-ViewModel state. Reusable Settings controls and styles live in
-`src/components/settings_widgets.*` and the other shared component modules.
+## Preview
 
-Display text uses AppKit's runtime FreeType font chain through
-`lilygo_ui_font_get()`. AppKit supplies Inter, Source Han Sans CN, and Font
-Awesome fallback glyphs; the application does not bundle generated fonts or
-refer to LVGL's built-in Montserrat fonts.
+<p>
+  <img src="assets/previews/settings-home.png" alt="Settings categories and current device status" width="240">
+  <img src="assets/previews/settings-landscape-wifi.png" alt="Responsive landscape Wi-Fi view" width="240">
+  <img src="assets/previews/settings-cellular.png" alt="Cellular radio and SIM status" width="240">
+  <img src="assets/previews/settings-battery.png" alt="Battery telemetry and charging controls" width="240">
+</p>
 
-The UI creates one `settings_surface` below the AppKit-provided
-`cm0_app_context_t::root`. All pages remain children of that surface and route
-by changing visibility, so the application never replaces the runtime screen.
-When the surface is wider than it is tall, it switches to a Grid layout with a
-scrollable category sidebar on the left and the active page on the right;
-portrait and square surfaces keep the single-page navigation flow. Resizing
-the surface changes that arrangement in place and keeps the active page state.
-AppKit alone owns system chrome and shared fonts; the Settings layout does not
-reserve or render a second status bar or home indicator.
+## Features
 
-## Requirements
+- **Responsive navigation:** landscape surfaces use a scrollable category sidebar
+  and a details pane; portrait and square surfaces use single-page navigation.
+  Layouts use the available container geometry and preserve the active page,
+  focus, and input while the surface is resized.
+- **Typography:** text uses AppKit's runtime font chain through
+  `lilygo_ui_font_get()`, including Inter, Source Han Sans CN, and Font Awesome
+  fallback glyphs; the application does not bundle LVGL Montserrat fonts.
+- **Wi-Fi:** inspect the current connection, known NetworkManager profiles, and
+  nearby networks; reconnect by profile UUID; view read-only TCP/IP, DNS, and
+  hardware details; and forget a profile after confirmation.
+- **Ethernet:** choose DHCP or manual IPv4 settings, edit DNS in either mode,
+  validate values locally, and apply the selected NetworkManager connection.
+- **Bluetooth:** control the radio, discover devices through BlueZ, and connect
+  or disconnect devices while retaining MAC address identification.
+- **Cellular:** control LTE on a Nordic nRF9151 Serial LTE Modem and inspect SIM,
+  registration, operator, technology, signal, and optional data counters.
+- **Battery and charging:** read BQ27220 fuel-gauge telemetry, calibrate design
+  and full-charge capacities when supported, and adjust BQ25890 current limits.
+- **General and sharing:** manage SSH Remote Login and the serial console, with
+  explicit restart-now or restart-later handling for serial-console changes.
+- **Keyboard and device information:** configure keyboard vibration, support
+  physical-keyboard focus navigation, and show OS, device, memory, kernel, and
+  filesystem information from About.
 
-- CMake 3.21 or newer
-- A C and C++ compiler
-- `pkg-config`
-- SDL2 for host simulation
-- LPM 0.1.0 or newer, available as `lpm`
-- `clang-format` for the optional pre-commit formatting hook
-- Git submodules initialized
-- An AArch64 cross compiler for device builds
+Optional hardware and services are reported as unavailable instead of preventing
+the rest of Settings from opening. Administrator changes use the narrow policies
+shipped in the complete Debian package; the application does not ask for or
+store administrator passwords. Cellular access normally requires read/write
+permission for `/dev/ttyACM0`.
 
-AppKit is pinned as the `third_party/cm0-appkit` Git submodule. Initialize it
-before configuring the application:
+## Development Environment
+
+Run commands from the repository root. [`lpm.toml`](lpm.toml) is the
+developer-maintained source for project metadata and build defaults, while
+[`CMakePresets.json`](CMakePresets.json) defines the stable `host-simulator` and
+`cm0-cross` configurations.
+
+### Get the Source
+
+```sh
+git clone --recurse-submodules https://github.com/LILYGO-UI/settings.git
+cd settings
+```
+
+For an existing checkout, initialize the pinned AppKit SDK:
 
 ```sh
 git submodule update --init --recursive
 ```
 
-The presets select this source SDK with `LilyGoUI_DIR`. Its package config
-builds AppKit and LVGL as static libraries and links them into each application.
-Updating AppKit code requires updating the submodule revision and rebuilding
-the application. A local SDK checkout can be selected explicitly:
+The default presets use `third_party/cm0-appkit` as `LilyGoUI_DIR`. Applications
+consume the SDK through its CMake package and do not enumerate AppKit or LVGL
+private sources. A local SDK can be selected explicitly:
 
 ```sh
 cmake --preset host-simulator -DLilyGoUI_DIR=/path/to/appkit
 ```
 
-Host builds use the SDK's font assets. Devices install `lilygo-ui-appkit-dev`,
-version 0.1.0 or newer, which contains the source SDK and the shared Inter,
-Source Han Sans CN, Font Awesome, and font licenses. Applications do not bundle
-duplicate fonts. AppKit and LVGL remain statically linked into each application;
-the package supplies no AppKit or LVGL shared libraries. The
-`min_appkit_version` field in `lpm.toml` sets this package's minimum version.
-The package also supports build environments using an installed source SDK
-instead of the submodule.
+### Host Dependencies
 
-Cross builds require the BSP sysroot and its system development libraries;
-they do not require an AppKit SDK package in the sysroot.
-When returning from a binary SDK build, use a fresh build directory so no old
-imported targets or SDK search paths remain cached.
+The simulator needs CMake 3.21 or newer, CTest and CPack, a C/C++ compiler with
+C++17 support, Git, `pkg-config`, SDL2 development files, and LPM 0.1.0 or
+newer. `clang-format` is used by the optional pre-commit hook.
 
-## Project metadata
-
-[`lpm.toml`](lpm.toml) is the single developer-maintained source for the
-application identity, version, descriptions, permissions, compatibility,
-assets, build presets, and deployment defaults. CMake validates it through LPM
-and derives the generated identity header, Launcher manifest, desktop entry,
-AppStream metadata, and Debian package fields from it.
-
-The source repository and homepage are
-`https://github.com/LILYGO-UI/settings`; release metadata identifies the
-application license as `LicenseRef-proprietary`. Update those values only in
-`lpm.toml` so generated publishing and package metadata remain consistent.
-
-Validate the metadata or generate temporary public publishing metadata with:
+#### Debian 12 / Ubuntu 24.04 or Later
 
 ```sh
-lpm metadata --format cmake
-lpm metadata --format publish-json --output .lpm/publish.json
+sudo apt update
+sudo apt install build-essential cmake git pkg-config patch libsdl2-dev \
+  libfreetype6-dev \
+  python3 python3-venv python3-pip
 ```
 
-`publish.json` is generated output and is ignored by Git. To enable automatic
-C/C++ formatting for commits, configure the checked-in hook once:
+#### macOS
+
+Install the Xcode Command Line Tools if needed, then install host tools with
+[Homebrew](https://brew.sh/):
 
 ```sh
-git config core.hooksPath .githooks
+xcode-select --install
+brew install git cmake pkg-config patch sdl2 freetype python
 ```
 
-## Host simulator and tests
+#### LPM
 
-On macOS, install host dependencies with `brew install cmake pkg-config sdl2`.
-Then configure, build, test, and launch the SDL simulator:
+CMake invokes `lpm metadata --format cmake` during configuration. If LPM is not
+already installed, use a project-local Python environment:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install "git+https://github.com/LILYGO-UI/lpm.git"
+lpm --version
+```
+
+Reactivate the environment in each new shell. CMake searches `.venv/bin` and
+`PATH`; an existing installation can also be selected with
+`-DLPM_EXECUTABLE=/absolute/path/to/lpm`.
+
+### Device Cross Compiler
+
+CM0 builds need an AArch64 Linux cross compiler and the target libraries required
+by the BSP and selected AppKit renderer. On Debian or Ubuntu:
+
+```sh
+sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+```
+
+On Apple Silicon macOS:
+
+```sh
+brew install aarch64-unknown-linux-gnu
+```
+
+The toolchain expects these names on `PATH`:
+
+```sh
+aarch64-linux-gnu-gcc --version
+aarch64-linux-gnu-g++ --version
+```
+
+The cross preset downloads CM0 BSP 0.1.0 on first configuration, verifies its
+SHA-256 checksum, and caches the sysroot under `.cache/cm0-bsp/0.1.0`. Change
+the cache location with `-DCM0_BSP_CACHE_DIR=/absolute/path/to/cache`.
+
+## Build and Test
+
+### Desktop Simulator
+
+Use LPM for the shortest development loop:
+
+```sh
+lpm start --foreground
+```
+
+After an initial build, reuse it with `lpm start --no-build --foreground`.
+The simulator uses SDL2 and software rendering. Direct commands are:
 
 ```sh
 cmake --preset host-simulator
 cmake --build --preset host-simulator --parallel
-ctest --preset host-simulator
 ./build/host-simulator/lilygo-ui-settings
-# Or, after an initial build:
-lpm start --no-build --foreground
 ```
 
-The test suite covers backend parsing and mutation plus every settings page at
-the product's 568x1232 portrait resolution. It also renders 320x568 compact,
-1232x568 landscape, and 1024x768 desktop viewports, and verifies that a live
-orientation change preserves the active page and text input. Render tests
-write PPM snapshots under `build/host-simulator/`.
+### Tests
 
-## CM0 build and Debian package
+Run the complete host suite with:
 
-Initialize the AppKit submodule, then use the cross preset.
-On its first configuration, CMake downloads the pinned
-[`0.1.0` CM0 BSP](https://github.com/LILYGO-UI/CM0BspBuilder/releases/download/0.1.0/cm0_sdk.tar.gz),
-verifies its SHA-256 checksum, and extracts it under
-`.cache/cm0-bsp/0.1.0`. Later builds reuse that cache.
+```sh
+lpm test
+```
+
+The suite covers backend parsing and mutation, platform command validation,
+ViewModels, driver-protocol checks, sudoers syntax when `visudo` is available,
+and no-display rendering scenarios.
+
+| Test area | Coverage |
+| --- | --- |
+| Core and command runner | Settings state, parsing, validation, and command execution |
+| Battery and cellular | Fuel-gauge behavior, calibration, serial protocol, and modem state |
+| ViewModels | User commands, asynchronous updates, errors, and focus-safe refreshes |
+| Page rendering | Home, Wi-Fi, Bluetooth, Ethernet, Cellular, Battery, General, About, Keyboard, and Sharing |
+| Responsive scenarios | `320x568` compact, `568x1232` portrait, `1232x568` landscape, `1024x768` desktop, resize, reopen, serial, and physical-keyboard focus cases |
+
+Render tests write PPM snapshots under `build/host-simulator`. Inspect affected
+snapshots after UI changes; passing assertions alone does not verify text fitting,
+focus visibility, or visual hierarchy.
+
+### CM0 Device Build
+
+Build and package the ARM64 device image with:
+
+```sh
+lpm pack
+```
+
+The equivalent CMake commands are:
 
 ```sh
 cmake --preset cm0-cross
@@ -136,47 +207,35 @@ cmake --build --preset cm0-cross --parallel
 cpack --config build/cm0-cross/CPackConfig.cmake -B dist
 ```
 
-The package is generated as
-`dist/lilygo-ui-settings_<version>_arm64.deb`. It installs the executable to
-`/usr/bin/lilygo-ui-settings`, the launcher manifest to
-`/usr/share/launcher/apps/cc.lilygo.ui.Settings.json`, and its launcher icon to
-`/usr/share/icons/hicolor/128x128/apps/cc.lilygo.ui.Settings.png`. It also
-installs the BlueZ D-Bus helper under `/usr/libexec`,
-`cc.lilygo.ui.Settings.desktop`, AppStream metadata, and AppKit font license
-notices.
+The Debian package is written as
+`dist/lilygo-ui-settings_<version>_arm64.deb`. It installs the executable,
+Launcher manifest and icon, desktop and AppStream metadata, BlueZ and power
+helpers, Wi-Fi/Ethernet/SSH/serial/power sudoers policies, and AppKit font
+license notices. The stable package and executable name is
+`lilygo-ui-settings`; the application ID is `cc.lilygo.ui.Settings`.
 
-The package intentionally provides, conflicts with, and replaces the published
-`lilygo-cm0-settings` package so Debian upgrades remove the old identity. These
-migration fields are not a naming convention for new applications.
+The main files are installed at `/usr/bin/lilygo-ui-settings`,
+`/usr/share/launcher/apps/cc.lilygo.ui.Settings.json`,
+`/usr/share/icons/hicolor/128x128/apps/cc.lilygo.ui.Settings.png`, and
+`/usr/libexec/lilygo-ui-settings-{bluetooth,power}`. Sudoers policies are
+installed under `/etc/sudoers.d/`.
 
-Device builds use AppKit's direct DRM/KMS display backend and evdev input.
-They do not require a desktop session, Wayland, or a compositor. The generated
-Debian package directly depends on DRM/FreeType system libraries and the
-`lilygo-ui-appkit-dev` SDK and font package. The direct DRM backend needs no
-Wayland or xkbcommon runtime libraries.
+The package depends on `lilygo-ui-appkit-dev >= 0.1.0` and the target's DRM,
+FreeType, BlueZ, systemd, and other declared runtime libraries. AppKit and LVGL
+remain statically linked into the application; the AppKit package supplies the
+source SDK, shared fonts, and licenses rather than shared AppKit or LVGL libraries.
 
-When the CM0 physical keyboard is connected, AppKit assigns focus to the
-Settings buttons, switches, sliders, and text fields. `Tab` and `Shift+Tab`
-move through the controls, `Enter` activates the focused control, and `Esc`
-cancels text entry or leaves the application. Character keys are sent to the
-focused text field; the software keyboard is hidden while the physical
-keyboard is available, while applications can continue to show it when no
-physical keyboard is present.
+The Debian metadata keeps `lilygo-cm0-settings` in `Provides`, `Conflicts`, and
+`Replaces` only as a migration from the previously published package. Do not
+reuse that legacy identity for new interfaces.
 
-The published BSP sysroot contains the `libdrm-dev` headers and pkg-config
-metadata required by the device build.
+### GPU Renderer Builds
 
-## GPU renderer builds
-
-Device rendering is selected at application build time by the source AppKit
-SDK. Use an updated SDK supporting `LILYGO_UI_RENDERER` and a target-matched
-CM0 sysroot with `libgbm-dev`, `libegl-dev`, and `libgles-dev`. The original
-BSP 0.1.0 lacks those GPU development dependencies. The original pinned
-AppKit submodule does not support GPU renderer selection; use a newer source
-SDK explicitly for this build.
-
-Select the SDK source checkout or the directory containing the installed
-source SDK's `LilyGoUIConfig.cmake`:
+GPU rendering is selected by the source AppKit SDK at application build time.
+Use an SDK that supports `LILYGO_UI_RENDERER` and a target sysroot containing
+matching GBM/EGL/GLES development files. The pinned AppKit submodule and the
+original BSP 0.1.0 are intended for software rendering; keep GPU builds in a
+separate directory and use software rendering for simulator tests.
 
 ```sh
 cmake --preset cm0-cross -B build/cm0-opengles \
@@ -187,142 +246,102 @@ cmake --build build/cm0-opengles --parallel
 cpack --config build/cm0-opengles/CPackConfig.cmake -B dist/opengles
 ```
 
-The executable contains AppKit and LVGL code, and its Debian package declares
-the selected renderer's system graphics dependencies. Keep separate build
-directories for software, OpenGL ES, and experimental NanoVG. Use software
-rendering for host simulator tests. Compare rendering correctness, frame time,
-memory, and repeated application exit/return on the target before changing a
-release renderer.
+### Underlying CMake Commands
 
-## Platform integration
+<details>
+<summary>Show direct configure, build, test, and package commands</summary>
 
-- Wi-Fi separates the current connection, known networks, and other nearby
-  networks. NetworkManager stores joined networks and credentials on the device;
-  Settings reads existing profiles without requesting their secrets. Known
-  networks remain listed when out of range, and reconnect by profile UUID without
-  asking for the password again. Tap the current network or its information
-  button for read-only TCP/IP, DNS, and Hardware tabs. These show the actual
-  IPv4/IPv6 configuration, addresses, subnet mask, routers, DNS servers, search
-  domains, interface, MAC address, and MTU. Missing values are shown as `--`.
-  Forget This Network requires confirmation and deletes only the selected
-  profile. Joining and forgetting networks use `sudo -n` for existing administrator
-  users, with a narrow policy installed as `/etc/sudoers.d/lilygo-ui-settings-wifi`
-  (mode `0440`). Deploy the complete package to install that policy; missing
-  authorization is reported as a failure. Passwords are supplied through stdin,
-  never through process arguments. Radio control retains the platform's existing
-  NetworkManager/rfkill authorization.
-- Wi-Fi and Ethernet use `/sys/class/net`, `getifaddrs()`, and NetworkManager's
-  `nmcli`. Ethernet exposes an inline IPv4 mode selector for DHCP or manual
-  configuration. In DHCP mode, IP address, subnet mask, and Gateway are locked;
-  manual mode enables those fields. DNS remains editable in either mode. The
-  editor validates values locally, updates the selected NetworkManager
-  connection persistently, and then activates it. Writes use
-  `sudo -n`; the package installs a narrow `/etc/sudoers.d` policy for the two
-  fixed `nmcli` operations. If the policy is absent or authorization fails,
-  the page reports the save failure without prompting for or storing a password.
-- Bluetooth uses `/sys/class/rfkill` and BlueZ's `bluetoothctl` for radio and
-  discovery control. Device enumeration and friendly names use the packaged
-  `org.bluez.Device1` D-Bus helper; devices without a published `Name` or
-  `Alias` remain identifiable by their MAC address.
-- Battery identifies the BQ27220 fuel gauge and BQ25890 charger separately through
-  `/sys/class/power_supply`. It shows charge percentage, battery health, remaining,
-  full and design capacities, cycle count, voltage, current and temperature.
-  Maximum Capacity is calculated from full / design capacity; it is not a separate
-  hardware SOH register measurement.
-  Battery Calibration edits the design and visible full-charge capacities in mAh,
-  validates both values, asks for confirmation, and verifies readback. This needs
-  the accompanying [BQ27220 driver patch](data/kernel/README.md): the existing board
-  driver exposes these values as read-only. Old drivers display an upgrade notice.
-  The paired `calibration_capacity` ABI applies both values in one configuration
-  transaction; it does not write OTP or change the battery chemistry profile.
-  Capacity settings are in gauge RAM and can be lost when the gauge loses power.
-  The optional learning-cycle guide observes charge / use / recharge and does not
-  claim that the gauge completed a qualified CEDV learning cycle.
-  BQ25890 controls adjust input current (100–3250 mA, 50 mA steps) and charge
-  current (64 mA steps, capped by the device-tree battery limit). Choose an input
-  limit appropriate for the power source and cable. Changes are applied explicitly
-  and checked against the actual hardware value; thermal derating can produce a
-  different readback. The app does not write `online` (which controls input Hi-Z),
-  charge voltage, or raw I2C registers. Limits can be reset by the charger/driver
-  after reconnecting power or restarting.
-  The packaged `/usr/libexec/lilygo-ui-settings-power` helper accepts only the
-  validated capacity pair and these two current controls, using a fixed sysfs root.
-  `/etc/sudoers.d/lilygo-ui-settings-power` permits existing `sudo` group users to
-  invoke those operations through `sudo -n`; UI commands run asynchronously.
-  Install the complete Debian package to include the helper and policy. A platform
-  using `no_new_privs` must provide equivalent authorization. Custom test sysfs
-  roots are never forwarded to the privileged helper.
-- General → Sharing provides a Remote Login switch for SSH. Turning it on runs
-  `systemctl enable --now ssh.service`; turning it off disables and stops
-  `ssh.service` and any installed `ssh.socket` listener. The setting persists
-  across reboots. The switch follows observed service/socket state, refreshes
-  periodically, and stays disabled while applying or verifying a user change.
-  Background refreshes keep both Sharing switches focusable and responsive to
-  physical-button input; a user action takes precedence over a pending refresh.
-  Results are verified by reading back both runtime and startup state. A nonzero
-  command exit is not reported as a failure when the complete requested state
-  is confirmed. Original command errors are written to the application log.
-  The target needs systemd, OpenSSH server, and sudo. The Debian package installs
-  `/etc/sudoers.d/lilygo-ui-settings-ssh` (mode `0440`), allowing existing `sudo`
-  group members to run only the three exact SSH enable/disable commands used by
-  this page without a password. Writes use `sudo -n`; reads remain unprivileged.
-  The rule grants no access to other services or arbitrary commands. Settings
-  does not install SSH, unmask units, change login authentication, or add users
-  to the administrator group. Deploy the complete package so this rule is included.
-  Missing services and access failures appear on the Sharing page.
-  `LILYGO_UI_SYSTEMCTL` and `LILYGO_UI_SUDO` override the executables for platform
-  integration and isolated tests; arguments are passed directly without a shell.
-  Alternate controller paths need their own platform authorization; the bundled
-  rule authorizes only `/usr/bin/systemctl` with the fixed SSH arguments.
-  A supervisor that starts applications with Linux `no_new_privs` prevents
-  `sudo` from elevating; such a platform must provide an equivalent privileged
-  broker for this control.
-- Sharing also provides a Serial Console switch for boot messages and serial
-  login. It uses `raspi-config nonint get_serial_cons` and `do_serial_cons 0/1`
-  (0 enables, 1 disables) to change the console independently of UART hardware,
-  following the [Raspberry Pi serial configuration documentation](https://www.raspberrypi.com/documentation/computers/configuration.html#serial-port).
-  The target needs a version of `raspi-config` that supports these commands.
-  The package installs `/etc/sudoers.d/lilygo-ui-settings-serial` (mode `0440`),
-  allowing existing `sudo` group members to run only `do_serial_cons 0`,
-  `do_serial_cons 1`, and `systemctl --no-ask-password reboot` via `sudo -n`.
-  Reading the saved state remains unprivileged; no password is requested or stored.
-  Install the complete package to include the authorization rule. After a successful save and
-  readback, choose **Restart Now** or **Restart Later**. Only Restart Now sends
-  `systemctl --no-ask-password reboot`; failures allow retrying or postponing.
-  Restart Later retains the saved setting. Comparing it with `/proc/cmdline`
-  keeps the pending-restart status visible after reopening Settings.
-  `LILYGO_UI_RASPI_CONFIG` and `LILYGO_UI_RUNNING_CMDLINE` override the tool and
-  running command-line path for platform integration and isolated tests;
-  `LILYGO_UI_SUDO` selects the authorization executable. The packaged policy
-  only matches the fixed `/usr/bin/raspi-config` and `/usr/bin/systemctl` commands.
-- Cellular accesses the Nordic nRF9151 Serial LTE Modem (SLM) directly through
-  `/dev/ttyACM0` at 115200 baud, 8 data bits, no parity, and 1 stop bit. The switch
-  uses the modem's supported `AT+CFUN=21` / `AT+CFUN=20` commands to enable or
-  disable LTE while preserving GNSS, then reads back the actual functional and
-  system modes. It does not configure APNs or activate PDP contexts.
-  `AT+CPIN?`, `AT%XICCID`, `AT+CIMI`, `AT+COPS?`, `AT+CEREG?`, and `AT+CESQ`
-  supply SIM status, ICCID, IMSI, operator, LTE-M / NB-IoT technology, registration,
-  and RSRP signal strength. Missing devices, serial access failures, busy ports,
-  missing SIMs, and PIN / PUK locks are shown explicitly.
-  Data Usage optionally reads the modem's `AT%XCONNSTAT?` collection counters.
-  The transmit and receive fields are reported in kB and displayed using decimal
-  units. Settings does not start, stop, or reset collection: values can remain
-  unchanged when collection is stopped and represent the modem's collection
-  period, not monthly billing or remaining plan allowance. Unsupported or
-  unreadable statistics are shown as unavailable.
-  The operating system must grant the app's user read/write access to the serial
-  device, for example through its serial-device group or an appropriate udev
-  rule. This page does not use sudo, NetworkManager, or ModemManager. It shares
-  `/tmp/lilygo_nrf9151_uart.lock` with `lilygo-ui-cellular` for the default port;
-  close the other app's modem session before accessing it from Settings.
-  `LILYGO_UI_CELLULAR_DEVICE` overrides the serial path for platform integration
-  and PTY tests. Protocol details follow the
-  [nRF91x1 Cellular AT Commands reference](https://docs.nordicsemi.com/r/bundle/ref_at_commands_nrf91x1/).
-- About reads OS, device-tree, memory, kernel, and filesystem information.
+```sh
+# Host simulator
+cmake --preset host-simulator
+cmake --build --preset host-simulator --parallel
+ctest --preset host-simulator
 
-The UI remains usable when hardware or an optional service is absent and shows
-an explicit unavailable state. Platform images and tests can override paths
-with `CM0_NETWORK_DIR`, `CM0_RFKILL_DIR`, `CM0_POWER_SUPPLY_DIR`, `CM0_NMCLI`,
-`CM0_BLUETOOTHCTL`, `CM0_OS_RELEASE_FILE`, `CM0_DEVICE_MODEL_FILE`,
-`CM0_DEVICE_SERIAL_FILE`, `CM0_MEMINFO_FILE`, `CM0_STORAGE_PATH`, and
-`LILYGO_UI_BLUETOOTH_DBUS_HELPER`.
+# CM0 device package
+cmake --preset cm0-cross
+cmake --build --preset cm0-cross --parallel
+cpack --config build/cm0-cross/CPackConfig.cmake -B dist
+```
+
+</details>
+
+### Troubleshooting
+
+| Symptom | Action |
+| --- | --- |
+| `lpm` is unavailable during configuration | Activate `.venv`, put LPM on `PATH`, or set `LPM_EXECUTABLE`. |
+| `LilyGoUI` or bundled LVGL cannot be found | Initialize `third_party/cm0-appkit` with `git submodule update --init --recursive`. |
+| SDL2 is missing | Install the host SDL2 development package and rerun the host preset. |
+| BSP download fails | Check access to the CM0 BSP release, disk space, and the configured cache directory. |
+| Cross build cannot find target libraries | Install required libraries in the AArch64 sysroot; host libraries cannot substitute for them. |
+| A privileged change is rejected | Install the complete Debian package so its narrow sudoers policies and helpers are present; platforms using `no_new_privs` need an equivalent privileged broker. |
+| Cellular is unavailable | Grant read/write access to `/dev/ttyACM0`, close other modem sessions, and check `/tmp/lilygo_nrf9151_uart.lock`. |
+
+## Platform Integration
+
+The application keeps platform access behind small domain and command-runner
+boundaries so optional hardware can fail independently:
+
+- NetworkManager and `/sys/class/net` provide Wi-Fi and Ethernet state. Writes
+  use fixed, package-installed `sudo -n` policies; passwords are never stored or
+  passed in process arguments.
+- rfkill, `bluetoothctl`, and the packaged BlueZ D-Bus helper provide Bluetooth
+  radio and device state.
+- The cellular page talks directly to the nRF9151 SLM over 115200 8N1 serial and
+  does not use NetworkManager, ModemManager, or sudo.
+- `/sys/class/power_supply` exposes BQ27220 and BQ25890 telemetry. Capacity
+  calibration requires the board driver support described in
+  [`data/kernel/README.md`](data/kernel/README.md).
+- Sharing controls use systemd and `raspi-config`; restart is requested only
+  after the user selects **Restart Now**.
+
+See the [architecture overview](docs/00-overview.md) for the complete command
+allow-list, sysfs and serial paths, environment overrides, driver requirements,
+and authorization behavior.
+
+Physical keyboards use AppKit's focus chain: `Tab` and `Shift+Tab` move between
+controls, `Enter` activates the focused control, and `Esc` cancels text entry or
+leaves the application. The software keyboard is suppressed while a physical
+keyboard is available.
+
+## Project Metadata
+
+[`lpm.toml`](lpm.toml) is the single developer-maintained source for identity,
+version, descriptions, license, permissions, compatibility, assets, build
+presets, package output, and deployment defaults. CMake reads it through LPM and
+generates the application identity header, Launcher manifest, desktop entry,
+AppStream metadata, and Debian fields.
+
+The stable public identity is:
+
+```text
+Package and executable  lilygo-ui-settings
+Application ID          cc.lilygo.ui.Settings
+```
+
+Validate metadata with:
+
+```sh
+lpm metadata --format cmake
+```
+
+`publish.json` is temporary LPM output. Do not edit or commit it; update project
+metadata only in `lpm.toml`.
+
+## Documentation
+
+| Guide | Contents |
+| --- | --- |
+| [Architecture overview](docs/00-overview.md) | Product boundaries, platform integration, data flow, permissions, and runtime behavior |
+| [UI development guidelines](docs/01-user-interface.md) | Responsive layout, typography, ownership, and visual acceptance requirements |
+| [Battery driver notes](data/kernel/README.md) | BQ27220 patch, calibration ABI, and learning-cycle guidance |
+| [Asset notes](assets/images/README.md) | Source images and generated application artwork |
+
+## Acknowledgments
+
+The application uses LILYGO UI AppKit and LVGL for its runtime and UI system,
+SDL2 for the desktop simulator, and FreeType-backed AppKit fonts. Device
+integration follows the public interfaces of NetworkManager, BlueZ, systemd,
+`raspi-config`, Linux power-supply and rfkill, and Nordic nRF9151 Serial LTE
+Modem AT commands. Follow the relevant platform and hardware documentation when
+deploying or redistributing the application.
