@@ -2,7 +2,7 @@ schema_version = 1
 
 [project]
 package = "lilygo-ui-settings"
-version = "0.1.0"
+version = "0.1.1"
 app_id = "cc.lilygo.ui.Settings"
 title = "Settings"
 summary = "Configure networking, SSH sharing, serial console, keyboard vibration, power, and device settings."
